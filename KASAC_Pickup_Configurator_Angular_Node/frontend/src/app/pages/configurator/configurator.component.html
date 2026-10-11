@@ -1,0 +1,565 @@
+<div class="config-app" [class.contact-mode]="phase() === 'contact'" [class.embedded]="embedded">
+  <header class="appbar">
+    <a *ngIf="!embedded" routerLink="/" class="kasac-logo">
+      <img src="assets/img/logo-kasac.png" alt="KASAC" width="83" height="40" />
+    </a>
+    <ol class="flow" *ngIf="phase() !== 'success'" aria-label="Pasos">
+      <li [class.current]="phase() === 'vehicle'" [class.done]="phase() !== 'vehicle'">
+        <span>1</span>
+        Vehículo
+      </li>
+      <li [class.current]="phase() === 'configure'" [class.done]="phase() === 'contact'">
+        <span>2</span>
+        Equipamiento
+      </li>
+      <li [class.current]="phase() === 'contact'">
+        <span>3</span>
+        Datos de contacto
+      </li>
+    </ol>
+    <div class="header-actions">
+      <button
+        *ngIf="vehicle() && phase() !== 'success'"
+        class="vehicle-chip"
+        type="button"
+        (click)="changeVehicle()"
+      >
+        <span>{{ vehicle()!.brand }} {{ vehicle()!.model }} {{ vehicle()!.year }}</span>
+        <b>Cambiar</b>
+      </button>
+      <a class="commercial-link" *ngIf="commercialEnabled" routerLink="/comercial/login">Área comercial</a>
+    </div>
+  </header>
+
+  <!-- Paso 1: vehículo -->
+  <section class="vehicle-picker" *ngIf="phase() === 'vehicle'">
+    <div class="picker-copy">
+      <div class="eyebrow">Configurador 3D</div>
+      <h1>Elija el vehículo que desea equipar</h1>
+      <p>Los accesorios disponibles y su ficha técnica dependen del modelo seleccionado.</p>
+    </div>
+    <div class="vehicle-grid" *ngIf="catalog(); else loadingCatalog">
+      <button
+        class="vehicle-card"
+        type="button"
+        *ngFor="let v of catalog()!.vehicles"
+        (click)="chooseVehicle(v)"
+      >
+        <!-- Foto de la tarjeta: assets/img/vehiculos/<id>.jpg (puede reemplazarse por una foto real) -->
+        <span class="thumb">
+          <img
+            [src]="'assets/img/vehiculos/' + v.id + '.jpg'"
+            alt=""
+            loading="lazy"
+            (error)="$any($event.target).parentElement.classList.add('missing')"
+          />
+        </span>
+        <span class="brand">{{ v.brand }}</span>
+        <strong>{{ v.model }}</strong>
+        <span class="spec">{{ v.year }} · {{ v.subtitle }}</span>
+        <span class="quality">
+          {{ v.quality === 'detailed' ? 'Modelo 3D detallado' : 'Modelo 3D referencial' }}
+        </span>
+        <span class="select-label">Seleccionar</span>
+      </button>
+    </div>
+    <ng-template #loadingCatalog>
+      <div class="empty" [class.error]="error()">{{ error() || 'Cargando vehículos…' }}</div>
+    </ng-template>
+    <p class="catalog-note" *ngIf="catalog()">{{ catalog()!.notice }}</p>
+  </section>
+
+  <!-- Pasos 2 y 3 -->
+  <main class="workspace" *ngIf="vehicle() && (phase() === 'configure' || phase() === 'contact')">
+    <aside class="side left" [class.mobile-open]="mobilePanel() === 'catalog'">
+      <div class="side-head">
+        <div>
+          <b>Equipamiento</b>
+          <small>{{ vehicle()!.brand }} {{ vehicle()!.model }}</small>
+        </div>
+        <button class="mobile-close" type="button" (click)="mobilePanel.set('viewer')" aria-label="Cerrar">
+          Cerrar
+        </button>
+      </div>
+      <div class="tabs" *ngIf="features.graphics || features.interior">
+        <button [class.active]="leftTab() === 'equipment'" (click)="setLeftTab('equipment')">
+          Equipamiento
+        </button>
+        <button
+          *ngIf="features.graphics"
+          [class.active]="leftTab() === 'graphics'"
+          (click)="setLeftTab('graphics')"
+        >
+          Gráfica
+        </button>
+        <button
+          *ngIf="features.interior"
+          [class.active]="leftTab() === 'interior'"
+          (click)="setLeftTab('interior')"
+        >
+          Interior
+        </button>
+      </div>
+
+      <div class="panel-scroll" *ngIf="leftTab() === 'equipment'">
+        <div class="paint-picker" *ngIf="catalog()?.paints?.length">
+          <div class="paint-title">
+            <b>Color de la unidad</b>
+            <small>{{ paint()?.name || 'Color del modelo' }}</small>
+          </div>
+          <div class="swatches">
+            <button
+              type="button"
+              class="swatch original"
+              [class.active]="!paint()"
+              (click)="paint.set(null)"
+              title="Color del modelo"
+              aria-label="Color del modelo"
+            ></button>
+            <button
+              type="button"
+              class="swatch"
+              *ngFor="let p of catalog()!.paints"
+              [style.background]="p.color"
+              [class.active]="paint()?.id === p.id"
+              (click)="paint.set(p)"
+              [title]="p.name"
+              [attr.aria-label]="p.name"
+            ></button>
+          </div>
+        </div>
+
+        <div class="filters" role="tablist" aria-label="Categoría">
+          <button [class.active]="category() === 'all'" (click)="category.set('all')">Todos</button>
+          <button [class.active]="category() === 'proteccion'" (click)="category.set('proteccion')">
+            Protección
+          </button>
+          <button [class.active]="category() === 'iluminacion'" (click)="category.set('iluminacion')">
+            Iluminación
+          </button>
+          <button [class.active]="category() === 'utilidad'" (click)="category.set('utilidad')">
+            Utilidad
+          </button>
+        </div>
+
+        <article class="catalog-item" *ngFor="let item of filteredItems()" [class.added]="isAdded(item)">
+          <div class="item-title">
+            <div>
+              <b>{{ item.name }}</b>
+              <small>{{ item.shortDescription }}</small>
+            </div>
+            <button
+              class="add"
+              type="button"
+              (click)="addItem(item)"
+              [attr.aria-label]="'Agregar ' + item.name"
+            >
+              {{ isAdded(item) ? 'Agregado' : 'Agregar' }}
+            </button>
+          </div>
+          <details *ngIf="fitment(item, vehicle()!.id) as f">
+            <summary>
+              Ficha técnica
+              <span class="fit-status" [class.verified]="f.specStatus === 'verified'">
+                {{ statusLabel(f.specStatus) }}
+              </span>
+            </summary>
+            <p>{{ f.description }}</p>
+            <dl>
+              <ng-container *ngFor="let s of f.specs">
+                <dt>{{ s.label }}</dt>
+                <dd>{{ s.value }}</dd>
+              </ng-container>
+            </dl>
+          </details>
+        </article>
+        <div class="empty" *ngIf="!filteredItems().length">
+          No hay accesorios de esta categoría para este modelo.
+        </div>
+      </div>
+
+      <div class="panel-scroll" *ngIf="leftTab() === 'graphics'">
+        <div class="graphics-intro">
+          <b>Viniles y reflectivos</b>
+          <p>Seleccione un formato, defina su medida real y colóquelo sobre la carrocería.</p>
+        </div>
+        <button
+          class="graphic-option"
+          type="button"
+          *ngFor="let p of catalog()?.graphics"
+          [class.active]="graphicPreset()?.id === p.id"
+          (click)="selectGraphicPreset(p)"
+        >
+          <span class="swatch" [style.background]="p.color"></span>
+          <span>
+            <b>{{ p.name }}</b>
+            <small>{{ p.description }}</small>
+          </span>
+        </button>
+        <div class="graphic-editor" *ngIf="graphicPreset() as gp">
+          <div class="row">
+            <div class="field">
+              <label>{{ gp.type === 'reflective' ? 'Longitud visual / segmento' : 'Ancho' }} (cm)</label>
+              <input
+                type="number"
+                min="1"
+                max="300"
+                [ngModel]="graphicWidth()"
+                (ngModelChange)="graphicWidth.set(+$event)"
+              />
+            </div>
+            <div class="field">
+              <label>{{ gp.type === 'reflective' ? 'Ancho de cinta' : 'Alto' }} (cm)</label>
+              <input
+                type="number"
+                min="1"
+                max="150"
+                [ngModel]="graphicHeight()"
+                (ngModelChange)="graphicHeight.set(+$event)"
+              />
+            </div>
+          </div>
+          <div class="field" *ngIf="gp.type === 'sticker'">
+            <label>Rotación ({{ graphicRotation() }}°)</label>
+            <input
+              type="range"
+              min="-180"
+              max="180"
+              [ngModel]="graphicRotation()"
+              (ngModelChange)="graphicRotation.set(+$event)"
+            />
+          </div>
+          <button class="btn primary full" type="button" (click)="graphicActive.set(!graphicActive())">
+            {{
+              graphicActive()
+                ? 'Cancelar'
+                : gp.type === 'reflective'
+                  ? 'Dibujar sobre el vehículo'
+                  : 'Colocar sobre el vehículo'
+            }}
+          </button>
+        </div>
+      </div>
+
+      <div class="panel-scroll" *ngIf="leftTab() === 'interior'">
+        <div class="graphics-intro">
+          <b>Vista interior</b>
+          <p>Escena demostrativa hasta incorporar el modelo real del habitáculo.</p>
+        </div>
+        <div class="interior-grid">
+          <button
+            type="button"
+            *ngFor="let m of catalog()?.interiorMaterials"
+            [class.active]="interior().materialId === m.id"
+            (click)="setInteriorMaterial(m.id)"
+          >
+            <span class="material-dot" [style.background]="m.color"></span>
+            <b>{{ m.name }}</b>
+            <small>{{ m.description }}</small>
+          </button>
+        </div>
+        <div class="camera-grid">
+          <button [class.active]="interior().camera === 'driver'" (click)="setInteriorCamera('driver')">
+            Conductor
+          </button>
+          <button [class.active]="interior().camera === 'passenger'" (click)="setInteriorCamera('passenger')">
+            Copiloto
+          </button>
+          <button [class.active]="interior().camera === 'rear-left'" (click)="setInteriorCamera('rear-left')">
+            Posterior izq.
+          </button>
+          <button
+            [class.active]="interior().camera === 'rear-center'"
+            (click)="setInteriorCamera('rear-center')"
+          >
+            Posterior centro
+          </button>
+          <button
+            [class.active]="interior().camera === 'rear-right'"
+            (click)="setInteriorCamera('rear-right')"
+          >
+            Posterior der.
+          </button>
+          <button [class.active]="interior().camera === 'free'" (click)="setInteriorCamera('free')">
+            Libre
+          </button>
+        </div>
+        <div class="field">
+          <label>Color de acabado</label>
+          <input type="color" [ngModel]="interior().color" (ngModelChange)="setInteriorColor($event)" />
+        </div>
+      </div>
+
+      <div class="undo-bar">
+        <button type="button" class="text-btn" [disabled]="!history.length" (click)="undo()">
+          Deshacer último cambio
+        </button>
+        <span>Ctrl + Z</span>
+      </div>
+    </aside>
+
+    <section
+      class="viewer-zone"
+      [class.mobile-hidden]="mobilePanel() !== 'viewer' && phase() === 'configure'"
+    >
+      <app-three-viewer
+        [vehicle]="vehicle()"
+        [accessories]="accessories()"
+        [graphics]="graphics()"
+        [selectedInstanceId]="selectedInstanceId()"
+        [transformMode]="transformMode()"
+        [graphicTool]="graphicTool()"
+        [viewMode]="viewMode()"
+        [interiorMaterialColor]="interior().color"
+        [interiorCamera]="interior().camera"
+        [paintColor]="paint()?.color ?? null"
+        (selectInstance)="selectedInstanceId.set($event)"
+        (transformChanged)="onTransform($event)"
+        (graphicPlaced)="onGraphicPlaced($event)"
+      />
+      <div class="object-toolbar" *ngIf="selectedAccessory() as s">
+        <div class="obj-name">
+          <b>{{ s.name }}</b>
+          <small>
+            {{
+              s.fitment.placementMode === 'fixed' ? 'Posición fija de montaje' : 'Puede ajustar la ubicación'
+            }}
+          </small>
+        </div>
+        <div class="tool-actions" *ngIf="s.fitment.placementMode !== 'fixed'">
+          <button
+            [class.active]="transformMode() === 'translate'"
+            (click)="transformMode.set('translate')"
+            title="Mover (W)"
+          >
+            Mover
+          </button>
+          <button
+            [class.active]="transformMode() === 'rotate'"
+            (click)="transformMode.set('rotate')"
+            title="Girar (E)"
+          >
+            Girar
+          </button>
+          <button
+            [class.active]="transformMode() === 'scale'"
+            (click)="transformMode.set('scale')"
+            title="Escala (R)"
+          >
+            Escala
+          </button>
+        </div>
+        <button class="delete" type="button" (click)="removeSelected()" title="Quitar (Supr)">Quitar</button>
+      </div>
+    </section>
+
+    <aside class="side right" [class.mobile-open]="mobilePanel() === 'summary'">
+      <div class="side-head">
+        <div>
+          <b>{{ phase() === 'contact' ? 'Datos de contacto' : 'Resumen' }}</b>
+          <small>
+            {{
+              phase() === 'contact'
+                ? 'Para que nuestro equipo comercial le responda'
+                : 'Revise su configuración antes de enviarla'
+            }}
+          </small>
+        </div>
+        <button class="mobile-close" type="button" (click)="mobilePanel.set('viewer')" aria-label="Cerrar">
+          Cerrar
+        </button>
+      </div>
+      <ng-container *ngIf="phase() === 'configure'; else contactForm">
+        <div class="panel-scroll summary-scroll">
+          <section class="sum-vehicle">
+            <h3>Vehículo</h3>
+            <div class="sum-line">
+              <b>{{ vehicle()!.brand }} {{ vehicle()!.model }} {{ vehicle()!.year }}</b>
+              <small>{{ vehicle()!.subtitle }}</small>
+            </div>
+            <div class="sum-line" *ngIf="paint() as p">
+              <span class="swatch-dot" [style.background]="p.color"></span>
+              <span>{{ p.name }}</span>
+            </div>
+          </section>
+          <section>
+            <h3>
+              Equipamiento
+              <span class="count">{{ accessories().length }}</span>
+            </h3>
+            <div class="empty compact" *ngIf="!accessories().length">
+              Agregue accesorios desde el catálogo.
+            </div>
+            <div
+              class="selected-row"
+              *ngFor="let a of accessories()"
+              [class.selected]="a.instanceId === selectedInstanceId()"
+            >
+              <button
+                class="select-name"
+                type="button"
+                (click)="selectedInstanceId.set(a.instanceId); mobilePanel.set('viewer')"
+              >
+                <b>{{ a.name }}</b>
+                <small>
+                  {{ a.fitment.placementMode === 'fixed' ? 'Montaje fijo' : 'Ubicación ajustable' }}
+                </small>
+              </button>
+              <button
+                class="remove"
+                type="button"
+                (click)="removeItem(a.instanceId)"
+                [attr.aria-label]="'Quitar ' + a.name"
+              >
+                Quitar
+              </button>
+            </div>
+          </section>
+          <section *ngIf="features.graphics">
+            <h3>
+              Gráfica
+              <span class="count">{{ graphics().length }}</span>
+            </h3>
+            <div class="empty compact" *ngIf="!graphics().length">Sin viniles ni reflectivos.</div>
+            <div class="selected-row" *ngFor="let g of graphics()">
+              <div class="select-name">
+                <b>{{ g.name }}</b>
+                <small *ngIf="g.type === 'sticker'">{{ g.widthCm }} × {{ g.heightCm }} cm</small>
+                <small *ngIf="g.type === 'reflective'">
+                  {{ g.lengthM || 0 }} m · {{ g.heightCm }} cm de ancho
+                </small>
+              </div>
+              <button class="remove" type="button" (click)="deleteGraphic(g.instanceId)">Quitar</button>
+            </div>
+          </section>
+          <section class="notes">
+            <div class="field">
+              <label for="req-notes">Comentarios (opcional)</label>
+              <textarea
+                id="req-notes"
+                rows="3"
+                [(ngModel)]="requestNotes"
+                placeholder="Uso en mina, cantidad de unidades, ubicación especial de un accesorio…"
+              ></textarea>
+            </div>
+          </section>
+        </div>
+        <div class="side-footer">
+          <p>
+            Sin precios en esta etapa: nuestro equipo comercial revisa la configuración y le envía la
+            propuesta.
+          </p>
+          <button class="btn primary full" type="button" (click)="goContact()">Continuar</button>
+        </div>
+      </ng-container>
+      <ng-template #contactForm>
+        <div class="panel-scroll contact-scroll">
+          <div class="type-switch" role="radiogroup" aria-label="Tipo de cliente">
+            <button
+              type="button"
+              [class.active]="customer.type === 'corporate'"
+              (click)="setCustomerType('corporate')"
+            >
+              Empresa
+            </button>
+            <button
+              type="button"
+              [class.active]="customer.type === 'personal'"
+              (click)="setCustomerType('personal')"
+            >
+              Persona natural
+            </button>
+          </div>
+          <div class="field" *ngIf="customer.type === 'corporate'">
+            <label for="c-company">Razón social *</label>
+            <input id="c-company" [(ngModel)]="customer.companyName" autocomplete="organization" />
+          </div>
+          <div class="field" *ngIf="customer.type === 'corporate'">
+            <label for="c-ruc">RUC *</label>
+            <input id="c-ruc" [(ngModel)]="customer.ruc" inputmode="numeric" maxlength="11" />
+          </div>
+          <div class="field">
+            <label for="c-name">
+              {{ customer.type === 'corporate' ? 'Nombre de contacto' : 'Nombres y apellidos' }} *
+            </label>
+            <input id="c-name" [(ngModel)]="customer.fullName" autocomplete="name" />
+          </div>
+          <div class="field" *ngIf="customer.type === 'corporate'">
+            <label for="c-position">Cargo</label>
+            <input id="c-position" [(ngModel)]="customer.position" />
+          </div>
+          <div class="field" *ngIf="customer.type === 'personal'">
+            <label for="c-doc">DNI / CE</label>
+            <input id="c-doc" [(ngModel)]="customer.document" />
+          </div>
+          <div class="field">
+            <label for="c-email">Correo *</label>
+            <input id="c-email" type="email" [(ngModel)]="customer.email" autocomplete="email" />
+          </div>
+          <div class="field">
+            <label for="c-phone">Teléfono *</label>
+            <input id="c-phone" type="tel" [(ngModel)]="customer.phone" autocomplete="tel" />
+          </div>
+          <div class="field">
+            <label for="c-city">Ciudad</label>
+            <input id="c-city" [(ngModel)]="customer.city" />
+          </div>
+          <div class="field">
+            <label for="c-notes">Información adicional</label>
+            <textarea id="c-notes" rows="3" [(ngModel)]="customer.notes"></textarea>
+          </div>
+          <div class="review-box">
+            <b>Se enviará</b>
+            <span>
+              {{ vehicle()!.brand }} {{ vehicle()!.model }}{{ paint() ? ' · ' + paint()!.name : '' }}
+            </span>
+            <span>
+              {{ accessories().length }} {{ accessories().length === 1 ? 'accesorio' : 'accesorios' }}
+            </span>
+            <span *ngIf="features.graphics">{{ graphics().length }} elementos gráficos</span>
+          </div>
+          <div class="error-box" *ngIf="error()" role="alert">{{ error() }}</div>
+        </div>
+        <div class="side-footer two">
+          <button class="btn secondary" type="button" (click)="backToConfigure()">Volver</button>
+          <button class="btn primary" type="button" [disabled]="busy()" (click)="submit()">
+            {{ busy() ? 'Enviando…' : 'Enviar solicitud' }}
+          </button>
+        </div>
+      </ng-template>
+    </aside>
+  </main>
+
+  <nav class="mobile-nav" *ngIf="vehicle() && phase() === 'configure'" aria-label="Secciones">
+    <button [class.active]="mobilePanel() === 'catalog'" (click)="mobilePanel.set('catalog')">
+      Catálogo
+    </button>
+    <button [class.active]="mobilePanel() === 'viewer'" (click)="mobilePanel.set('viewer')">Vista 3D</button>
+    <button [class.active]="mobilePanel() === 'summary'" (click)="mobilePanel.set('summary')">
+      Resumen
+      <span class="count" *ngIf="accessories().length">{{ accessories().length }}</span>
+    </button>
+  </nav>
+
+  <section class="success-screen" *ngIf="phase() === 'success'">
+    <div class="success-card card">
+      <div class="eyebrow">Solicitud enviada</div>
+      <h1>{{ successCode() }}</h1>
+      <p>
+        Nuestro equipo comercial recibió su configuración y se comunicará con usted. Guarde este enlace para
+        volver a verla en 3D.
+      </p>
+      <div class="public-link">
+        <input readonly [value]="publicUrl()" aria-label="Enlace de su configuración" />
+        <button class="btn secondary" (click)="copyLink()">{{ copied() ? 'Copiado' : 'Copiar' }}</button>
+      </div>
+      <div class="success-actions">
+        <a class="btn primary" [href]="publicUrl()" [attr.target]="embedded ? '_top' : null">
+          Ver mi configuración
+        </a>
+        <a *ngIf="!embedded" class="btn secondary" routerLink="/">Volver al inicio</a>
+        <a *ngIf="embedded" class="btn secondary" href="/" target="_top">Volver a KASAC</a>
+      </div>
+    </div>
+  </section>
+</div>

@@ -1,0 +1,113 @@
+<div class="commercial">
+  <header>
+    <span class="kasac-logo"><img src="assets/img/logo-kasac.png" alt="KASAC" width="83" height="40" /></span>
+    <div>
+      <b>Área comercial</b>
+      <button type="button" (click)="logout()">Salir</button>
+    </div>
+  </header>
+  <main>
+    <div class="head">
+      <div>
+        <div class="eyebrow">Bandeja comercial</div>
+        <h1>Solicitudes de clientes</h1>
+        <p>Configuraciones enviadas desde el configurador 3D de la web.</p>
+      </div>
+      <div class="metrics">
+        <div class="metric">
+          <strong>{{ counts()['NEW'] || 0 }}</strong>
+          <span>Nuevas</span>
+        </div>
+        <div class="metric">
+          <strong>{{ counts()['QUOTED'] || 0 }}</strong>
+          <span>Cotizadas</span>
+        </div>
+        <div class="metric">
+          <strong>{{ counts()['APPROVED'] || 0 }}</strong>
+          <span>Aprobadas</span>
+        </div>
+      </div>
+    </div>
+    @if (system(); as sys) {
+      @if (!sys.persistent) {
+        <div class="sys-alert error">
+          <b>Almacenamiento temporal.</b>
+          Este servidor no tiene disco permanente: las solicitudes se borrarán cuando se reinicie o se duerma.
+          Configure
+          <code>DATABASE_URL</code>
+          (PostgreSQL) en el hosting.
+        </div>
+      }
+      <p class="sys-info">
+        Datos: {{ sys.storage === 'postgres' ? 'base de datos PostgreSQL' : 'archivo local' }} · Solicitudes
+        sin cotizar se conservan {{ sys.retentionDays > 0 ? sys.retentionDays + ' días' : 'sin límite' }} ·
+        Aviso por correo: {{ sys.email.enabled ? 'activo → ' + sys.email.to.join(', ') : 'desactivado' }}
+      </p>
+    }
+    <div class="toolbar">
+      <div class="filters" role="tablist">
+        <button [class.active]="filter() === 'ALL'" (click)="filter.set('ALL')">
+          Todas
+          <span>{{ counts()['ALL'] }}</span>
+        </button>
+        @for (s of statuses; track s) {
+          <button [class.active]="filter() === s" (click)="filter.set(s)">
+            {{ label[s] }}
+            <span>{{ counts()[s] || 0 }}</span>
+          </button>
+        }
+      </div>
+      <input
+        class="search"
+        type="search"
+        placeholder="Buscar por código, cliente, RUC o modelo"
+        [value]="query()"
+        (input)="query.set($any($event.target).value)"
+      />
+    </div>
+    <div class="request-list">
+      <div class="request head-row" aria-hidden="true">
+        <span>Solicitud</span>
+        <span>Cliente</span>
+        <span>Vehículo</span>
+        <span>Cotización</span>
+        <span>Fecha</span>
+        <span></span>
+      </div>
+      @for (l of filtered(); track l.id) {
+        <a class="request" [routerLink]="link(l)">
+          <div class="code">
+            <b>{{ l.code }}</b>
+            <span [attr.data-status]="l.status">{{ label[l.status] }}</span>
+          </div>
+          <div>
+            <b>{{ customer(l) }}</b>
+            <small>{{ l.customer.fullName }} · {{ l.customer.phone }}</small>
+          </div>
+          <div>
+            <b>{{ l.configuration.vehicle.brand }} {{ l.configuration.vehicle.model }}</b>
+            <small>
+              {{ l.configuration.accessories.length }} accesorios{{
+                l.configuration.paint ? ' · ' + l.configuration.paint.name : ''
+              }}
+            </small>
+          </div>
+          <div>
+            @if (l.quote && l.quoteTotal) {
+              <b>{{ l.quote.number }}</b>
+              <small>{{ symbol[l.quoteTotal.currency] }} {{ money(l.quoteTotal.total) }}</small>
+            } @else {
+              <small>Sin cotizar</small>
+            }
+          </div>
+          <time>{{ l.createdAt | date: 'dd/MM/yyyy HH:mm' }}</time>
+          <span class="arrow">→</span>
+        </a>
+      } @empty {
+        <div class="empty">
+          {{ loaded() ? 'No hay solicitudes con este filtro.' : 'Cargando solicitudes…' }}
+        </div>
+      }
+    </div>
+  </main>
+</div>

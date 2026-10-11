@@ -1,0 +1,30 @@
+<div class="login-page">
+  <div class="login-card card">
+    <span class="kasac-logo"><img src="assets/img/logo-kasac.png" alt="KASAC" width="83" height="40" /></span>
+    <div>
+      <div class="eyebrow">Área comercial</div>
+      <h1>Ingreso del personal</h1>
+      <p>Bandeja de solicitudes del configurador 3D, cotizaciones y aprobaciones.</p>
+    </div>
+    <form (ngSubmit)="login()">
+      <div class="field">
+        <label for="l-email">Correo</label>
+        <input id="l-email" type="email" name="email" [(ngModel)]="email" autocomplete="username" required />
+      </div>
+      <div class="field">
+        <label for="l-pass">Contraseña</label>
+        <input
+          id="l-pass"
+          type="password"
+          name="password"
+          [(ngModel)]="password"
+          autocomplete="current-password"
+          required
+        />
+      </div>
+      <div class="error" *ngIf="error()" role="alert">{{ error() }}</div>
+      <button class="btn primary" [disabled]="busy()">{{ busy() ? 'Ingresando…' : 'Ingresar' }}</button>
+    </form>
+    <small>Acceso solo para el personal de KASAC. Las credenciales se configuran en backend/.env.</small>
+  </div>
+</div>

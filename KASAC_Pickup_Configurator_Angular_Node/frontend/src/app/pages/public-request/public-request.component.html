@@ -1,0 +1,86 @@
+<div class="public-shell">
+  <header>
+    <a *ngIf="!embedded" routerLink="/" class="kasac-logo">
+      <img src="assets/img/logo-kasac.png" alt="KASAC" width="83" height="40" />
+    </a>
+    <div *ngIf="lead() as l">
+      <b>{{ l.code }}</b>
+      <small>Vista compartida · solo lectura</small>
+    </div>
+  </header>
+  <main *ngIf="lead() as l; else state">
+    <section class="viewer">
+      <div class="mode-switch" *ngIf="features.interior">
+        <button [class.active]="viewMode() === 'exterior'" (click)="viewMode.set('exterior')">
+          Exterior
+        </button>
+        <button [class.active]="viewMode() === 'interior'" (click)="viewMode.set('interior')">
+          Interior
+        </button>
+      </div>
+      <app-three-viewer
+        [vehicle]="l.configuration.vehicle"
+        [accessories]="l.configuration.accessories"
+        [graphics]="l.configuration.graphics"
+        [readonly]="true"
+        [viewMode]="viewMode()"
+        [interiorMaterialColor]="l.configuration.interior?.color || '#484B51'"
+        [interiorCamera]="l.configuration.interior?.camera || 'driver'"
+        [paintColor]="l.configuration.paint?.color ?? null"
+      />
+    </section>
+    <aside>
+      <div class="eyebrow">Configuración recibida</div>
+      <h1>{{ l.configuration.vehicle.brand }} {{ l.configuration.vehicle.model }}</h1>
+      <p class="intro">
+        Esta es la configuración visual enviada a KASAC. Puede girarla y acercarse al modelo, pero no
+        modificarla.
+      </p>
+      <section *ngIf="l.configuration.paint as p">
+        <h3>Color de la unidad</h3>
+        <div class="row">
+          <b>{{ p.name }}</b>
+          <small>{{ p.color }}</small>
+        </div>
+      </section>
+      <section>
+        <h3>Equipamiento</h3>
+        <div class="row" *ngFor="let a of l.configuration.accessories">
+          <b>{{ a.name }}</b>
+          <small>{{ a.fitment.description }}</small>
+        </div>
+        <div class="empty" *ngIf="!l.configuration.accessories.length">Sin accesorios registrados.</div>
+      </section>
+      <section *ngIf="features.graphics || l.configuration.graphics.length">
+        <h3>Gráfica</h3>
+        <div class="row" *ngFor="let g of l.configuration.graphics">
+          <b>{{ g.name }}</b>
+          <small *ngIf="g.type === 'sticker'">{{ g.widthCm }} × {{ g.heightCm }} cm</small>
+          <small *ngIf="g.type === 'reflective'">{{ g.lengthM || 0 }} m</small>
+        </div>
+        <div class="empty" *ngIf="!l.configuration.graphics.length">Sin gráfica aplicada.</div>
+      </section>
+      <section *ngIf="features.interior && l.configuration.interior">
+        <h3>Interior</h3>
+        <div class="row">
+          <b>Acabado seleccionado</b>
+          <small>{{ l.configuration.interior.materialId }}</small>
+        </div>
+      </section>
+      <section *ngIf="l.configuration.notes">
+        <h3>Indicaciones</h3>
+        <p>{{ l.configuration.notes }}</p>
+      </section>
+      <div class="notice">
+        El precio final y la validación técnica son definidos por el área comercial y las áreas técnicas de
+        KASAC.
+      </div>
+    </aside>
+  </main>
+  <ng-template #state>
+    <div class="state">
+      <b>{{ error() || 'Cargando configuración…' }}</b>
+      <a routerLink="/" class="btn secondary" *ngIf="error()">Volver</a>
+    </div>
+  </ng-template>
+</div>

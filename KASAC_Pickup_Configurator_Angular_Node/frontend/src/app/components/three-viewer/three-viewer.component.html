@@ -1,0 +1,84 @@
+<div class="viewer" #host>
+  <div class="viewer-top">
+    <div class="viewer-status">
+      <span class="dot" [class.busy]="loading"></span>
+      {{ vehicle?.brand }} {{ vehicle?.model }}
+      <small *ngIf="vehicle?.quality === 'reference'">Modelo 3D referencial</small>
+    </div>
+    <div class="camera-actions" *ngIf="viewMode === 'exterior'">
+      <button type="button" (click)="setView('front')" title="Vista frontal" aria-label="Vista frontal">
+        Frente
+      </button>
+      <button
+        type="button"
+        (click)="setView('left')"
+        title="Lateral izquierda"
+        aria-label="Lateral izquierda"
+      >
+        Izq.
+      </button>
+      <button type="button" (click)="setView('right')" title="Lateral derecha" aria-label="Lateral derecha">
+        Der.
+      </button>
+      <button type="button" (click)="setView('rear')" title="Vista posterior" aria-label="Vista posterior">
+        Atrás
+      </button>
+      <button type="button" (click)="setView('iso')" title="Vista 3/4" aria-label="Vista 3/4">3/4</button>
+      <span class="sep"></span>
+      <button
+        type="button"
+        (click)="toggleAutoRotate()"
+        [class.active]="autoRotate"
+        title="Rotación automática"
+        aria-label="Rotación automática"
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+          <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M20 12a8 8 0 1 1-2.3-5.7" />
+            <path d="M20 4v4h-4" />
+          </g>
+        </svg>
+      </button>
+      <button
+        type="button"
+        (click)="downloadImage()"
+        [disabled]="loading || !!loadError"
+        title="Descargar imagen de la configuración"
+        aria-label="Descargar imagen"
+      >
+        <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+          <path
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linejoin="round"
+            d="M4 8h3l2-3h6l2 3h3v11H4z"
+          />
+          <circle cx="12" cy="13" r="3.5" fill="none" stroke="currentColor" stroke-width="2" />
+        </svg>
+      </button>
+    </div>
+  </div>
+  <div *ngIf="loading && !loadError" class="overlay">
+    <div class="spinner"></div>
+    <b>Cargando modelo 3D…</b>
+    <div class="progress" *ngIf="progress > 0"><i [style.width.%]="progress"></i></div>
+    <small *ngIf="progress > 0">{{ progress }}%</small>
+  </div>
+  <div *ngIf="loadError" class="overlay error">
+    <b>{{ loadError }}</b>
+    <button type="button" *ngIf="vehicle" (click)="retryLoad()">Reintentar</button>
+  </div>
+  <div *ngIf="warning" class="viewer-warning" role="status">{{ warning }}</div>
+  <div *ngIf="graphicTool.active && !readonly" class="graphic-hint">
+    {{
+      graphicTool.preset?.type === 'reflective'
+        ? 'Mantenga presionado y dibuje sobre la carrocería'
+        : 'Haga clic sobre la carrocería para colocarlo'
+    }}
+  </div>
+  <div class="viewer-bottom">
+    <span>Arrastre para girar · Rueda o pellizco para acercar</span>
+    <span *ngIf="!readonly">Clic en una pieza para editarla</span>
+  </div>
+</div>

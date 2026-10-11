@@ -1,0 +1,23 @@
+{
+  "name": "kasac-pickup-configurator-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "check": "node --check src/server.js && node --check src/catalog.js && node --check src/store.js && node --check src/sanitize.js",
+    "start:public": "node src/server.js --public",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "exceljs": "^4.4.0",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "nodemailer": "^7.0.13",
+    "pdfkit": "^0.17.2",
+    "pg": "^8.23.1"
+  }
+}

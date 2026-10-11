@@ -1,0 +1,547 @@
+@if (lead(); as l) {
+  <div class="detail" [attr.data-tab]="tab()">
+    <header>
+      <a [routerLink]="base || '/'">← Solicitudes</a>
+      <nav class="tabs" role="tablist">
+        <button role="tab" [class.active]="tab() === 'request'" (click)="selectTab('request')">
+          Solicitud
+        </button>
+        <button role="tab" [class.active]="tab() === 'quote'" (click)="selectTab('quote')">
+          Cotización
+          @if (l.quote) {
+            <span>{{ l.quote.number }}</span>
+          }
+        </button>
+      </nav>
+      <div class="head-id">
+        <b>
+          {{ l.code }}
+          <span class="status" [attr.data-status]="l.status">{{ label[l.status] }}</span>
+        </b>
+        <span>{{ l.createdAt | date: 'dd/MM/yyyy HH:mm' }}</span>
+      </div>
+    </header>
+
+    @if (message(); as m) {
+      <div class="toast" [class.error]="m.type === 'error'" role="status">{{ m.text }}</div>
+    }
+
+    <main>
+      <!-- Visor 3D (el mismo en ambas pestañas, para no recargar el modelo) -->
+      <section class="viewer">
+        @if (config(); as c) {
+          @if (tab() === 'request' && features.interior) {
+            <div class="mode-switch">
+              <button [class.active]="viewMode() === 'exterior'" (click)="viewMode.set('exterior')">
+                Exterior
+              </button>
+              <button [class.active]="viewMode() === 'interior'" (click)="viewMode.set('interior')">
+                Interior
+              </button>
+            </div>
+          }
+          <app-three-viewer
+            [vehicle]="c.vehicle"
+            [accessories]="c.accessories"
+            [graphics]="c.graphics"
+            [readonly]="true"
+            [viewMode]="viewMode()"
+            [interiorMaterialColor]="c.interior?.color || '#484B51'"
+            [interiorCamera]="c.interior?.camera || 'driver'"
+            [paintColor]="c.paint?.color ?? null"
+          />
+        }
+      </section>
+
+      @if (tab() === 'request') {
+        <aside class="request-panel">
+          <div class="eyebrow">Cliente</div>
+          <h1>{{ customerName(l) }}</h1>
+          <div class="data">
+            @if (l.customer.ruc) {
+              <span>
+                <b>RUC</b>
+                {{ l.customer.ruc }}
+              </span>
+            }
+            @if (l.customer.document) {
+              <span>
+                <b>DNI / CE</b>
+                {{ l.customer.document }}
+              </span>
+            }
+            <span>
+              <b>Contacto</b>
+              {{ l.customer.fullName }}
+            </span>
+            <span>
+              <b>Teléfono</b>
+              {{ l.customer.phone }}
+            </span>
+            <span>
+              <b>Correo</b>
+              {{ l.customer.email }}
+            </span>
+            @if (l.customer.position) {
+              <span>
+                <b>Cargo</b>
+                {{ l.customer.position }}
+              </span>
+            }
+            @if (l.customer.city) {
+              <span>
+                <b>Ciudad</b>
+                {{ l.customer.city }}
+              </span>
+            }
+          </div>
+          <section>
+            <h3>
+              {{ l.configuration.vehicle.brand }} {{ l.configuration.vehicle.model }}
+              {{ l.configuration.vehicle.year }}
+            </h3>
+            @if (l.configuration.paint; as p) {
+              <div class="line">
+                <b>Color de la unidad: {{ p.name }}</b>
+                <small>{{ p.color }}</small>
+              </div>
+            }
+            @for (a of l.configuration.accessories; track a.instanceId) {
+              <div class="line">
+                <b>{{ a.name }}</b>
+                <small>{{ a.fitment.description }}</small>
+                <dl>
+                  @for (s of a.fitment.specs; track s.label) {
+                    <dt>{{ s.label }}</dt>
+                    <dd>{{ s.value }}</dd>
+                  }
+                </dl>
+              </div>
+            } @empty {
+              <div class="empty">Sin accesorios.</div>
+            }
+          </section>
+          @if (l.configuration.graphics.length) {
+            <section>
+              <h3>Gráfica</h3>
+              @for (g of l.configuration.graphics; track g.instanceId) {
+                <div class="line">
+                  <b>{{ g.name }}</b>
+                  <small>
+                    {{
+                      g.type === 'sticker'
+                        ? g.widthCm + ' × ' + g.heightCm + ' cm'
+                        : (g.lengthM || 0) + ' m · ' + g.heightCm + ' cm de ancho'
+                    }}
+                  </small>
+                </div>
+              }
+            </section>
+          }
+          @if (l.configuration.notes || l.customer.notes) {
+            <section>
+              <h3>Observaciones del cliente</h3>
+              @if (l.configuration.notes) {
+                <p>{{ l.configuration.notes }}</p>
+              }
+              @if (l.customer.notes) {
+                <p>{{ l.customer.notes }}</p>
+              }
+            </section>
+          }
+          <section class="management">
+            <h3>Gestión comercial</h3>
+            <div class="field">
+              <label for="d-status">Estado</label>
+              <select
+                id="d-status"
+                [(ngModel)]="status"
+                [disabled]="status === 'QUOTED' || status === 'APPROVED'"
+              >
+                @for (s of manualStatuses; track s) {
+                  <option [value]="s">{{ label[s] }}</option>
+                }
+                @if (status === 'QUOTED' || status === 'APPROVED') {
+                  <option [value]="status">{{ label[status] }}</option>
+                }
+              </select>
+              @if (status === 'QUOTED' || status === 'APPROVED') {
+                <small class="muted">Este estado lo define la cotización.</small>
+              }
+            </div>
+            <div class="field">
+              <label for="d-notes">Notas internas</label>
+              <textarea
+                id="d-notes"
+                rows="4"
+                [(ngModel)]="notes"
+                placeholder="Acuerdos, llamadas, condiciones conversadas…"
+              ></textarea>
+            </div>
+            <div class="row-actions">
+              <button class="btn secondary" (click)="saveRequest()" [disabled]="!!busy()">Guardar</button>
+              <button class="btn primary" (click)="selectTab('quote')">
+                {{ l.quote ? 'Ver cotización' : 'Preparar cotización' }}
+              </button>
+            </div>
+          </section>
+        </aside>
+      } @else {
+        @if (quote(); as q) {
+          <section class="quote-panel" #quotePanel>
+            @if (approved()) {
+              <div class="approved-banner">
+                <div>
+                  <b>Cotización aprobada</b>
+                  <span>
+                    {{ q.number }} · {{ q.approvedAt | date: 'dd/MM/yyyy HH:mm' }} · {{ symbol[q.currency] }}
+                    {{ money(totals().total) }}
+                  </span>
+                </div>
+                <button class="btn secondary" (click)="reopen()" [disabled]="!!busy()">Reabrir</button>
+              </div>
+            }
+
+            <div class="photos" [class.big]="approved()">
+              <div class="photos-head">
+                <h3>Fotos del vehículo</h3>
+                <button class="text-btn" (click)="takePhotos()" [disabled]="!!busy() || approved()">
+                  {{
+                    busy() === 'photos'
+                      ? 'Tomando fotos…'
+                      : photos().length
+                        ? 'Volver a tomar'
+                        : 'Tomar fotos del modelo 3D'
+                  }}
+                </button>
+              </div>
+              @if (photos().length) {
+                <div class="photo-grid">
+                  @for (p of photos(); track p.id) {
+                    <figure>
+                      <img [src]="p.src" [alt]="p.name" />
+                      <figcaption>{{ p.name }}</figcaption>
+                    </figure>
+                  }
+                </div>
+              } @else {
+                <p class="muted small">
+                  Se toman automáticamente al guardar la cotización y van en el anexo del PDF y en el Excel.
+                </p>
+              }
+            </div>
+
+            @if (approved()) {
+              <div class="approved-view">
+                <div class="summary-head">
+                  <div>
+                    <div class="eyebrow">Cotización aprobada</div>
+                    <h2>
+                      {{ q.number }}
+                      <small>versión {{ q.version }}</small>
+                    </h2>
+                  </div>
+                  <dl>
+                    <dt>Cliente</dt>
+                    <dd>{{ q.customerName }}{{ q.customerDocument ? ' · ' + q.customerDocument : '' }}</dd>
+                    <dt>Vehículo</dt>
+                    <dd>
+                      {{ q.model }}{{ q.color ? ' · ' + q.color : '' }}{{ q.year ? ' · ' + q.year : '' }}
+                    </dd>
+                    <dt>Condición de pago</dt>
+                    <dd>{{ q.paymentTerms }} · validez {{ q.validityDays }} días</dd>
+                  </dl>
+                </div>
+                <table class="summary-table">
+                  <thead>
+                    <tr>
+                      <th>Código</th>
+                      <th>Descripción</th>
+                      <th>Cant. veh.</th>
+                      <th>Cant.</th>
+                      <th>Precio</th>
+                      <th>Dscto</th>
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  @for (s of sections; track s.id) {
+                    @if (itemsOf(s.id).length) {
+                      <tbody>
+                        <tr class="sec">
+                          <td colspan="6">{{ s.name }}</td>
+                          <td>{{ money(totals().sections[$index].subtotal) }}</td>
+                        </tr>
+                        @for (i of itemsOf(s.id); track i.id) {
+                          <tr>
+                            <td>{{ i.code }}</td>
+                            <td>{{ i.description }}</td>
+                            <td>{{ i.vehicles }}</td>
+                            <td>{{ i.quantity }}</td>
+                            <td>{{ money(i.unitPrice) }}</td>
+                            <td>{{ i.discount ? i.discount + ' %' : '-' }}</td>
+                            <td>{{ money(lineTotal(i)) }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    }
+                  }
+                </table>
+                <div class="quote-foot">
+                  <div>
+                    @if (q.observations) {
+                      <h3>Observaciones</h3>
+                      <p class="obs-text">{{ q.observations }}</p>
+                    }
+                    <h3>Entrega</h3>
+                    <p class="obs-text">{{ q.delivery }}</p>
+                  </div>
+                  <div class="totals">
+                    <div>
+                      <span>Subtotal</span>
+                      <b>{{ symbol[q.currency] }} {{ money(totals().subtotal) }}</b>
+                    </div>
+                    <div>
+                      <span>IGV {{ q.igvRate * 100 | number: '1.0-2' }} %</span>
+                      <b>{{ symbol[q.currency] }} {{ money(totals().igv) }}</b>
+                    </div>
+                    <div class="grand">
+                      <span>Total</span>
+                      <b>{{ symbol[q.currency] }} {{ money(totals().total) }}</b>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            } @else {
+              <fieldset>
+                <div class="quote-head">
+                  <div>
+                    <div class="eyebrow">Cotización</div>
+                    <h2>
+                      {{ q.number || 'Nueva cotización' }}
+                      @if (q.version) {
+                        <small>versión {{ q.version }}</small>
+                      }
+                    </h2>
+                  </div>
+                  <div class="inline-fields">
+                    <div class="field">
+                      <label>Moneda</label>
+                      <select [(ngModel)]="q.currency" (ngModelChange)="changed()">
+                        <option value="USD">Dólares (US$)</option>
+                        <option value="PEN">Soles (S/)</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label>Validez (días)</label>
+                      <input type="number" min="1" [(ngModel)]="q.validityDays" (ngModelChange)="changed()" />
+                    </div>
+                  </div>
+                </div>
+
+                <div class="form-grid">
+                  <div class="field span2">
+                    <label>Cliente</label>
+                    <input [(ngModel)]="q.customerName" (ngModelChange)="changed()" />
+                  </div>
+                  <div class="field">
+                    <label>RUC / DNI</label>
+                    <input [(ngModel)]="q.customerDocument" (ngModelChange)="changed()" />
+                  </div>
+                  <div class="field">
+                    <label>Contacto</label>
+                    <input [(ngModel)]="q.contact" (ngModelChange)="changed()" />
+                  </div>
+                  <div class="field span2">
+                    <label>Dirección</label>
+                    <input
+                      [(ngModel)]="q.address"
+                      (ngModelChange)="changed()"
+                      placeholder="Dirección fiscal del cliente"
+                    />
+                  </div>
+                  <div class="field">
+                    <label>Tipo de servicio</label>
+                    <input [(ngModel)]="q.serviceType" (ngModelChange)="changed()" />
+                  </div>
+                  <div class="field">
+                    <label>Motivo</label>
+                    <input [(ngModel)]="q.motive" (ngModelChange)="changed()" />
+                  </div>
+                  <div class="field">
+                    <label>Condición de pago</label>
+                    <input [(ngModel)]="q.paymentTerms" (ngModelChange)="changed()" />
+                  </div>
+                  <div class="field">
+                    <label>O. compra</label>
+                    <input [(ngModel)]="q.purchaseOrder" (ngModelChange)="changed()" />
+                  </div>
+                  <div class="field">
+                    <label>Modelo</label>
+                    <input [(ngModel)]="q.model" (ngModelChange)="changed()" />
+                  </div>
+                  <div class="field">
+                    <label>Color</label>
+                    <input [(ngModel)]="q.color" (ngModelChange)="changed()" />
+                  </div>
+                  <div class="field">
+                    <label>Año</label>
+                    <input [(ngModel)]="q.year" (ngModelChange)="changed()" />
+                  </div>
+                  <div class="field">
+                    <label>Operación</label>
+                    <input [(ngModel)]="q.operation" (ngModelChange)="changed()" />
+                  </div>
+                  <div class="field">
+                    <label>Placa</label>
+                    <input [(ngModel)]="q.plate" (ngModelChange)="changed()" />
+                  </div>
+                  <div class="field span3">
+                    <label>Chasis / VIN</label>
+                    <input [(ngModel)]="q.chassis" (ngModelChange)="changed()" />
+                  </div>
+                </div>
+
+                <div class="items">
+                  <div class="item-row header">
+                    <span>Código</span>
+                    <span>Descripción</span>
+                    <span>Cant. vehíc.</span>
+                    <span>Cantidad</span>
+                    <span>Precio unit.</span>
+                    <span>Dscto %</span>
+                    <span>Total</span>
+                    <span></span>
+                  </div>
+                  @for (s of sections; track s.id) {
+                    <div class="section-row">
+                      <b>{{ s.name }}</b>
+                      <span>
+                        {{ symbol[q.currency] }} {{ money(totals().sections[$index]?.subtotal || 0) }}
+                      </span>
+                    </div>
+                    @for (i of itemsOf(s.id); track i.id) {
+                      <div class="item-row">
+                        <input [(ngModel)]="i.code" (ngModelChange)="changed()" aria-label="Código" />
+                        <input
+                          [(ngModel)]="i.description"
+                          (ngModelChange)="changed()"
+                          aria-label="Descripción"
+                          [class.invalid]="!i.description.trim()"
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          [(ngModel)]="i.vehicles"
+                          (ngModelChange)="changed()"
+                          aria-label="Cantidad de vehículos"
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          [(ngModel)]="i.quantity"
+                          (ngModelChange)="changed()"
+                          aria-label="Cantidad"
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          [(ngModel)]="i.unitPrice"
+                          (ngModelChange)="changed()"
+                          aria-label="Precio unitario"
+                          [class.zero]="!i.unitPrice"
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          [(ngModel)]="i.discount"
+                          (ngModelChange)="changed()"
+                          aria-label="Descuento"
+                        />
+                        <span class="total">{{ money(lineTotal(i)) }}</span>
+                        <button
+                          class="remove"
+                          type="button"
+                          (click)="removeItem(i)"
+                          aria-label="Quitar línea"
+                        >
+                          Quitar
+                        </button>
+                      </div>
+                    }
+                    <button class="add-line" type="button" (click)="addItem(s.id)">
+                      + Agregar línea en {{ s.name.toLowerCase() }}
+                    </button>
+                  }
+                </div>
+
+                <div class="quote-foot">
+                  <div class="field obs">
+                    <label>Observaciones (una por línea; aparecen en el PDF y el Excel)</label>
+                    <textarea rows="5" [(ngModel)]="q.observations" (ngModelChange)="changed()"></textarea>
+                    <div class="obs-chips" aria-label="Agregar observación frecuente">
+                      @for (o of observationPresets; track o) {
+                        <button
+                          type="button"
+                          [disabled]="hasObservation(q, o)"
+                          (click)="addObservation(q, o)"
+                        >
+                          + {{ o }}
+                        </button>
+                      }
+                    </div>
+                    <label class="mt">Plazo de entrega</label>
+                    <input [(ngModel)]="q.delivery" (ngModelChange)="changed()" />
+                  </div>
+                  <div class="totals">
+                    <div>
+                      <span>Subtotal</span>
+                      <b>{{ symbol[q.currency] }} {{ money(totals().subtotal) }}</b>
+                    </div>
+                    <div>
+                      <span>IGV {{ q.igvRate * 100 | number: '1.0-2' }} %</span>
+                      <b>{{ symbol[q.currency] }} {{ money(totals().igv) }}</b>
+                    </div>
+                    <div class="grand">
+                      <span>Total</span>
+                      <b>{{ symbol[q.currency] }} {{ money(totals().total) }}</b>
+                    </div>
+                    <small>Precios sin IGV en cada línea. El cliente no ve estos montos en la web.</small>
+                  </div>
+                </div>
+              </fieldset>
+            }
+
+            <div class="action-bar">
+              <span class="state">
+                {{
+                  dirty()
+                    ? 'Cambios sin guardar'
+                    : l.quote
+                      ? 'Guardado ' + (l.quote.updatedAt | date: 'dd/MM HH:mm')
+                      : 'Borrador sin guardar'
+                }}
+              </span>
+              <button class="btn secondary" (click)="download('xlsx')" [disabled]="!!busy()">
+                {{ busy() === 'xlsx' ? 'Generando…' : 'Descargar Excel' }}
+              </button>
+              <button class="btn secondary" (click)="download('pdf')" [disabled]="!!busy()">
+                {{ busy() === 'pdf' ? 'Generando…' : 'Descargar PDF' }}
+              </button>
+              @if (!approved()) {
+                <button class="btn secondary" (click)="saveQuote()" [disabled]="!!busy()">
+                  {{ busy() === 'save' || busy() === 'photos' ? 'Guardando…' : 'Guardar' }}
+                </button>
+                <button class="btn primary" (click)="approve()" [disabled]="!!busy()">
+                  Aprobar cotización
+                </button>
+              }
+            </div>
+          </section>
+        }
+      }
+    </main>
+  </div>
+}

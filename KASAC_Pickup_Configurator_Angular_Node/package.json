@@ -1,0 +1,26 @@
+{
+  "name": "kasac-pickup-configurator",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "diagnostico": "node scripts/diagnostico.js",
+    "dev": "concurrently -n API,ANGULAR -c yellow,cyan \"npm run dev --workspace backend\" \"npm run start --workspace frontend\"",
+    "build": "npm run build:web --workspace frontend && npm run build:comercial --workspace frontend && node scripts/copiar-web.js",
+    "start": "npm run start --workspace backend",
+    "build:public": "npm run build:public --workspace frontend",
+    "start:public": "npm run start:public --workspace backend",
+    "build:web": "npm run build:web --workspace frontend",
+    "build:interno": "npm run build --workspace frontend"
+  },
+  "devDependencies": {
+    "@angular/cli": "^20.2.0",
+    "concurrently": "^9.1.2"
+  }
+}

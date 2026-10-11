@@ -1,0 +1,69 @@
+<div class="landing">
+  <header class="nav">
+    <div class="shell nav-inner">
+      <a routerLink="/" class="kasac-logo">
+        <img src="assets/img/logo-kasac.png" alt="KASAC" width="83" height="40" />
+      </a>
+      <nav>
+        <a href="#como-funciona">Cómo funciona</a>
+        @if (commercialEnabled) {
+          <a routerLink="/comercial/login">Área comercial</a>
+        }
+      </nav>
+      <a class="btn secondary" [href]="contactUrl" target="_blank" rel="noopener">Contáctenos</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow">Configurador 3D · Grupo KA S.A.C.</div>
+        <h1>Equipamiento para su camioneta, antes de instalarlo</h1>
+        <p>
+          Elija el modelo, agregue barras, defensas, parrillas o iluminación y revise cómo queda en 3D. La
+          configuración llega a nuestro equipo comercial, que la valida con usted.
+        </p>
+        <div class="actions">
+          <a class="btn primary" routerLink="/configura-tu-pickup">Configurador 3D</a>
+          <a class="btn ghost" [href]="contactUrl" target="_blank" rel="noopener">Contáctenos</a>
+        </div>
+      </div>
+      <!-- Imagen de portada: reemplace frontend/public/assets/img/portada.jpg por su propia foto (horizontal). -->
+      <figure class="hero-media" [class.missing]="photoMissing">
+        <img
+          src="assets/img/portada.jpg"
+          alt="Toyota Hilux con equipamiento KASAC"
+          (error)="photoMissing = true"
+        />
+      </figure>
+    </section>
+
+    <section id="como-funciona" class="steps shell">
+      <h2>Cómo funciona</h2>
+      <ol>
+        <li>
+          <span>01</span>
+          <h3>Elija su camioneta</h3>
+          <p>Toyota Hilux, Ford Ranger o Mitsubishi L200.</p>
+        </li>
+        <li>
+          <span>02</span>
+          <h3>Agregue el equipamiento</h3>
+          <p>Solo aparecen los accesorios compatibles con el modelo, cada uno con su ficha técnica.</p>
+        </li>
+        <li>
+          <span>03</span>
+          <h3>Envíe su solicitud</h3>
+          <p>Comercial recibe la configuración en 3D con el detalle completo y le responde.</p>
+        </li>
+      </ol>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell foot">
+      <span>© {{ year }} Grupo KA S.A.C. · Chorrillos, Lima</span>
+      <span>(01) 249 3642 · ventas&#64;kasac.pe</span>
+    </div>
+  </footer>
+</div>

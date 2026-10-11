@@ -1,0 +1,150 @@
+.public-shell {
+  height: 100dvh;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: 60px 1fr;
+  background: var(--bg);
+}
+.public-shell header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+.public-shell header > div {
+  display: grid;
+  text-align: right;
+}
+.public-shell header b {
+  font-size: 14px;
+  font-weight: 600;
+}
+.public-shell header small {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.public-shell main {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+}
+.public-shell aside {
+  min-height: 0;
+  overflow: auto;
+  background: #fff;
+  border-left: 1px solid var(--line);
+  padding: 22px;
+}
+.public-shell h1 {
+  font-size: 32px;
+  text-transform: uppercase;
+  margin: 6px 0 8px;
+}
+.intro {
+  color: var(--muted);
+  font-size: 14.5px;
+  margin: 0;
+}
+.public-shell aside section {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+  margin-top: 16px;
+}
+.public-shell h3 {
+  font-family: var(--body);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.public-shell aside p {
+  color: var(--muted);
+  font-size: 14px;
+}
+.row {
+  display: grid;
+  gap: 2px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.row:last-child {
+  border-bottom: 0;
+}
+.row b {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.row small {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.notice {
+  margin-top: 20px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+}
+.state {
+  grid-row: 2;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 14px;
+  color: var(--muted);
+}
+@media (max-width: 780px) {
+  .public-shell {
+    height: auto;
+    min-height: 100dvh;
+    overflow: auto;
+  }
+  .public-shell main {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(320px, 58vh) auto;
+  }
+  .public-shell aside {
+    overflow: visible;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}
+.viewer {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+.mode-switch {
+  position: absolute;
+  z-index: 8;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: #fff;
+  overflow: hidden;
+}
+.mode-switch button {
+  border: 0;
+  background: #fff;
+  color: var(--muted);
+  padding: 7px 14px;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.mode-switch button + button {
+  border-left: 1px solid var(--line-2);
+}
+.mode-switch button.active {
+  background: var(--ink);
+  color: #fff;
+}
