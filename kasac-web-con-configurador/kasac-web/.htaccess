@@ -1,0 +1,42 @@
+# ===== KASAC - Apache (hosting Linux / cPanel) =====
+Options -MultiViews
+RewriteEngine On
+
+# Forzar HTTPS y www
+RewriteCond %{HTTPS} off [OR]
+RewriteCond %{HTTP_HOST} !^www\. [NC]
+RewriteRule ^(.*)$ https://www.kasac.pe/$1 [L,R=301]
+
+# Redirigir las URLs de la web anterior (conserva posicionamiento en Google y enlaces ya compartidos)
+RewriteRule ^Nosotros/?$            /nosotros [L,R=301]
+RewriteRule ^Productos/?$           /productos [L,R=301]
+RewriteRule ^Contacto/?$            /contacto [L,R=301]
+RewriteRule ^MotosCorporativas/?$   /motos [L,R=301]
+RewriteRule ^AutosCorporativos/?$   /autos [L,R=301]
+RewriteRule ^PickUp/?$              /pickup [L,R=301]
+RewriteRule ^SUV/?$                 /suv [L,R=301]
+RewriteRule ^Panel/?$               /panel [L,R=301]
+RewriteRule ^CamionesCorpMineros/?$ /camiones [L,R=301]
+RewriteRule ^SeparadorCabina/?$     /panel [L,R=301]
+
+# URLs limpias: /nosotros sirve nosotros.html
+RewriteRule ^index(\.html)?$ / [L,R=301]
+RewriteCond %{THE_REQUEST} \s/+([^.\s?]+)\.html[\s?] [NC]
+RewriteRule ^ /%1 [L,R=301]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}.html -f
+RewriteRule ^(.+?)/?$ $1.html [L]
+
+# Modelos 3D del configurador
+AddType model/gltf-binary .glb
+
+# Caché de recursos estáticos
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType text/css "access plus 1 month"
+  ExpiresByType application/javascript "access plus 1 month"
+  ExpiresByType image/png "access plus 6 months"
+  ExpiresByType image/jpeg "access plus 6 months"
+  ExpiresByType video/mp4 "access plus 6 months"
+</IfModule>

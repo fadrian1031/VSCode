@@ -1,0 +1,8 @@
+node_modules/
+frontend/dist/
+.env
+*.log
+.DS_Store
+backend/data/*.json
+*.tmp
+backend/data/fotos/

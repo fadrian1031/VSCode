@@ -1,0 +1,35 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "API (Node)",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/src/server.js",
+      "cwd": "${workspaceFolder}/backend",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "Angular (ng serve)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run start --workspace frontend",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Navegador (Chrome)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:4200",
+      "webRoot": "${workspaceFolder}/frontend"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Depurar API + Angular",
+      "configurations": ["API (Node)", "Angular (ng serve)", "Navegador (Chrome)"],
+      "stopAll": true
+    }
+  ]
+}
