@@ -1,0 +1,40 @@
+# Despliegue en Render (Blueprint). En Render: New > Blueprint > elegir este repositorio.
+# Un solo servicio: web KASAC en /, configurador 3D embebido, Área Comercial en /comercial y la API.
+#
+# Datos: Render gratuito NO tiene disco permanente (todo se borra cuando el servicio se duerme o se
+# redespliega). Por eso las solicitudes, cotizaciones y fotos se guardan en PostgreSQL: cree una base
+# gratuita en https://neon.tech (no caduca) y pegue su cadena de conexión en DATABASE_URL.
+services:
+  - type: web
+    name: kasac-configurador
+    runtime: node
+    plan: free               # con "starter" (7 USD/mes) el servicio no se duerme
+    region: virginia         # la región de Render más cercana a Perú
+    # Se construye desde la raíz del repositorio: el servidor también publica la web KASAC
+    # (kasac-web-con-configurador/kasac-web), que está fuera de la carpeta del proyecto Node.
+    # --include=dev: con NODE_ENV=production npm omite Angular CLI y el build fallaría.
+    buildCommand: cd KASAC_Pickup_Configurator_Angular_Node && npm ci --include=dev && npm run build
+    startCommand: cd KASAC_Pickup_Configurator_Angular_Node && npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1"
+      - key: DATABASE_URL
+        sync: false            # cadena de conexión de Neon: postgresql://usuario:clave@host/neondb?sslmode=require
+      - key: RETENTION_DAYS
+        value: "30"            # solicitudes sin cotizar se conservan 30 días; las cotizadas, siempre
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: COMMERCIAL_EMAIL
+        value: comercial@kasac.pe
+      - key: COMMERCIAL_PASSWORD
+        sync: false            # Render la pide al crear el servicio (mínimo 10 caracteres)
+      - key: COMMERCIAL_NAME
+        value: Equipo Comercial KASAC
+      # Aviso por correo de cada nueva solicitud (correo de pruebas).
+      - key: NOTIFY_EMAIL
+        value: fabiocoyutupa@gmail.com
+      - key: RESEND_API_KEY
+        sync: false            # clave de https://resend.com (cree la cuenta con el mismo correo de NOTIFY_EMAIL)

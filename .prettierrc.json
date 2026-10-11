@@ -1,0 +1,15 @@
+{
+  "printWidth": 110,
+  "singleQuote": true,
+  "trailingComma": "none",
+  "arrowParens": "avoid",
+  "overrides": [
+    {
+      "files": "KASAC_Pickup_Configurator_Angular_Node/frontend/src/**/*.html",
+      "options": {
+        "parser": "angular",
+        "htmlWhitespaceSensitivity": "ignore"
+      }
+    }
+  ]
+}

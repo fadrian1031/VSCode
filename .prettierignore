@@ -1,0 +1,5 @@
+**/node_modules/**
+**/dist/**
+**/.angular/**
+kasac-web-con-configurador/kasac-web/configurador-app/**
+*.min.js
