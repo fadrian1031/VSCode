@@ -10,9 +10,12 @@ import { catalog } from './catalog.js';
 import { createStorage } from './storage.js';
 import { createNotifier } from './notify.js';
 import { sanitizeConfiguration } from './sanitize.js';
-import { draftQuote, sanitizeQuote, nextQuoteNumber, totals } from './quotes.js';
+import { draftQuote, sanitizeQuote, nextQuoteNumber, totals, quoteState, expiresAt } from './quotes.js';
 import { buildQuotePdf } from './pdf.js';
 import { buildQuoteXlsx } from './excel.js';
+import { createUsers, publicUser } from './usuarios.js';
+import { registerModules } from './modulos.js';
+import { expiryInfo } from './avisos.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const localData = path.join(__dirname, '../data');
@@ -22,6 +25,7 @@ const storage = await createStorage({
   fallbackDir: localData
 });
 const { store, photos: photoStore } = storage;
+const users = createUsers(storage.collection('usuarios'));
 const notifier = createNotifier();
 // Solicitudes sin cotizar se conservan RETENTION_DAYS días (por defecto 30); las cotizadas y aprobadas, siempre.
 const retentionDays = Number(process.env.RETENTION_DAYS ?? 30);
@@ -104,8 +108,10 @@ const safe = s =>
     .slice(0, 1000);
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const PHONE = /^[+\d][\d\s()-]{5,19}$/;
-// Flujo comercial: Nueva → Contactado → Negociando → Cotizada → Aprobada (o Perdida).
-const STATUSES = ['NEW', 'CONTACTED', 'NEGOTIATING', 'QUOTED', 'APPROVED', 'LOST'];
+// Flujo de la solicitud: Nueva → Contactado → Negociando → Cotizada → Aprobada o Rechazada.
+// "Perdida" se usa para cerrar una solicitud que no llegó a cotizarse.
+// Cotizada, Aprobada y Rechazada las asigna el sistema según la cotización.
+const MANUAL_STATUSES = ['NEW', 'CONTACTED', 'NEGOTIATING', 'LOST'];
 const normalize = lead => (lead.status === 'WON' ? { ...lead, status: 'APPROVED' } : lead); // solicitudes anteriores a las cotizaciones
 
 function publicToken() {
@@ -119,6 +125,21 @@ function nextCode(rows) {
   return `${prefix}${String(last + 1).padStart(5, '0')}`;
 }
 
+/** Registra un cambio en el historial de la solicitud (trazabilidad: quién, cuándo y qué). */
+function addEvent(row, by, action, detail = '') {
+  row.history = row.history || [];
+  row.history.push({ at: new Date().toISOString(), by, action, detail });
+}
+const STATUS_TEXT = {
+  NEW: 'Nueva',
+  CONTACTED: 'Contactado',
+  NEGOTIATING: 'Negociando',
+  QUOTED: 'Cotizada',
+  APPROVED: 'Aprobada',
+  REJECTED: 'Rechazada',
+  LOST: 'Perdida'
+};
+
 // Sesión comercial (token firmado con HMAC)
 const b64 = v => Buffer.from(JSON.stringify(v)).toString('base64url');
 const hmac = v => crypto.createHmac('sha256', secret).update(v).digest('base64url');
@@ -127,23 +148,31 @@ const sameText = (a, b) =>
     crypto.createHash('sha256').update(a).digest(),
     crypto.createHash('sha256').update(b).digest()
   );
-function signSession() {
-  const payload = b64({ sub: 'commercial', exp: Date.now() + 12 * 60 * 60 * 1000 });
+function signSession(user) {
+  const payload = b64({ sub: 'commercial', uid: user.id, exp: Date.now() + 12 * 60 * 60 * 1000 });
   return `${payload}.${hmac(payload)}`;
 }
 function verifySession(token) {
   try {
     const [p, s] = token.split('.');
-    if (!p || !s || !sameText(s, hmac(p))) return false;
+    if (!p || !s || !sameText(s, hmac(p))) return null;
     const value = JSON.parse(Buffer.from(p, 'base64url').toString());
-    return value.sub === 'commercial' && value.exp > Date.now();
+    return value.sub === 'commercial' && value.uid && value.exp > Date.now() ? value : null;
   } catch {
-    return false;
+    return null;
   }
 }
-function auth(req, res, next) {
-  const token = (req.headers.authorization || '').replace(/^Bearer\s+/, '');
-  if (!verifySession(token)) return res.status(401).json({ message: 'Sesión inválida o expirada.' });
+/** Exige sesión válida de un usuario activo; deja el usuario en req.user. */
+async function auth(req, res, next) {
+  const session = verifySession((req.headers.authorization || '').replace(/^Bearer\s+/, ''));
+  const user = session && (await users.find(session.uid));
+  if (!user || !user.active) return res.status(401).json({ message: 'Sesión inválida o expirada.' });
+  req.user = publicUser(user);
+  next();
+}
+function adminOnly(req, res, next) {
+  if (req.user?.role !== 'admin')
+    return res.status(403).json({ message: 'Solo un administrador puede hacer esto.' });
   next();
 }
 
@@ -194,9 +223,43 @@ function cleanCustomer(c) {
     notes: safe(c.notes)
   };
 }
-// Lo que el cliente puede ver por su enlace: sin datos personales, estado, id interno ni notas comerciales.
+// Lo que el cliente puede ver por su enlace: sin datos personales, id interno ni notas comerciales.
+// La cotización solo aparece cuando Comercial la emitió (un borrador nunca se muestra).
+function publicQuote(q) {
+  const state = quoteState(q);
+  if (!state || state === 'BORRADOR') return null;
+  return {
+    number: q.number,
+    state,
+    issuedAt: q.issuedAt,
+    expiresAt: expiresAt(q),
+    validityDays: q.validityDays,
+    currency: q.currency,
+    model: q.model,
+    color: q.color,
+    delivery: q.delivery,
+    paymentTerms: q.paymentTerms,
+    items: q.items.map(i => ({
+      section: i.section,
+      description: i.description,
+      vehicles: i.vehicles,
+      quantity: i.quantity,
+      unitPrice: i.unitPrice,
+      discount: i.discount
+    })),
+    totals: totals(q),
+    approvedAt: state === 'APROBADA' ? q.approvedAt : null,
+    rejectedAt: state === 'RECHAZADA' ? q.rejectedAt : null,
+    rejectionReason: state === 'RECHAZADA' ? q.rejectionReason : null
+  };
+}
 function publicView(lead) {
-  return { code: lead.code, createdAt: lead.createdAt, configuration: lead.configuration };
+  return {
+    code: lead.code,
+    createdAt: lead.createdAt,
+    configuration: lead.configuration,
+    quote: publicQuote(lead.quote)
+  };
 }
 
 // Los manejadores async pasan sus errores al manejador final (Express 5 lo hace automáticamente).
@@ -229,6 +292,7 @@ app.post('/api/leads', async (req, res) => {
       configuration,
       commercialNotes: ''
     };
+    addEvent(row, 'Cliente (web)', 'Solicitud recibida desde el configurador 3D');
     rows.unshift(row);
     return row;
   });
@@ -248,32 +312,90 @@ app.post('/api/leads', async (req, res) => {
     .catch(e => console.error('[aviso] No se pudo enviar el correo:', e.message));
 });
 
+const byToken = async token => (await store.all()).find(x => x.publicToken === token);
 app.get('/api/public/requests/:token', async (req, res) => {
-  const lead = (await store.all()).find(x => x.publicToken === req.params.token);
+  const lead = await byToken(req.params.token);
   if (!lead) return res.status(404).json({ message: 'Solicitud no encontrada.' });
   res.json(publicView(lead));
 });
+// PDF de la cotización emitida, para que el cliente lo descargue desde su enlace.
+app.get('/api/public/requests/:token/quote.pdf', async (req, res) => {
+  const lead = await byToken(req.params.token);
+  if (!lead || !publicQuote(lead.quote))
+    return res.status(404).json({ message: 'Cotización no disponible.' });
+  const buf = await buildQuotePdf(lead, await photoStore.load(lead.id));
+  res
+    .set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${lead.quote.number}.pdf"`,
+      'Cache-Control': 'no-store'
+    })
+    .send(buf);
+});
+
+/**
+ * Registra la respuesta del cliente a una cotización emitida: aprobada (FA) o rechazada (con motivo).
+ * by: quién la registra; date: fecha de la respuesta (por defecto, ahora).
+ */
+function answerQuote(row, { decision, reason, by, date }) {
+  const q = row.quote;
+  if (quoteState(q) !== 'EMITIDA')
+    return { status: 409, message: 'La cotización no está pendiente de respuesta del cliente.' };
+  const at = date || new Date().toISOString();
+  if (Date.parse(at) < Date.parse(q.issuedAt))
+    return { status: 400, message: 'La fecha de respuesta no puede ser anterior a la fecha de emisión.' };
+  if (decision === 'aprobar') {
+    q.state = 'APROBADA';
+    q.approvedAt = at;
+    row.status = 'APPROVED';
+    addEvent(row, by, `Cotización ${q.number} aprobada`, `Fecha de aprobación (FA): ${at.slice(0, 10)}`);
+  } else if (decision === 'rechazar') {
+    if (!safe(reason)) return { status: 400, message: 'Indique el motivo del rechazo.' };
+    q.state = 'RECHAZADA';
+    q.rejectedAt = at;
+    q.rejectionReason = safe(reason).slice(0, 300);
+    row.status = 'REJECTED';
+    addEvent(row, by, `Cotización ${q.number} rechazada`, `Motivo: ${q.rejectionReason}`);
+  } else return { status: 400, message: 'Respuesta no válida.' };
+  q.answeredBy = by;
+  row.updatedAt = new Date().toISOString();
+  return { lead: row };
+}
+
+app.post('/api/public/requests/:token/respuesta', async (req, res) => {
+  const result = await store.update(rows => {
+    const row = rows.find(x => x.publicToken === req.params.token);
+    if (!row?.quote) return { status: 404, message: 'Cotización no encontrada.' };
+    return answerQuote(row, {
+      decision: req.body?.decision,
+      reason: req.body?.reason,
+      by: 'Cliente (enlace)'
+    });
+  });
+  if (result.status) return res.status(result.status).json({ message: result.message });
+  res.json(publicView(result.lead));
+  notifier
+    .quoteAnswered(result.lead, originOf(req))
+    .catch(e => console.error('[aviso] No se pudo enviar el correo:', e.message));
+});
 
 if (commercialEnabled) {
-  app.post('/api/auth/login', (req, res) => {
+  app.post('/api/auth/login', async (req, res) => {
     const ip = req.ip || 'desconocida';
     const wait = loginBlocked(ip);
     if (wait)
       return res
         .status(429)
         .json({ message: `Demasiados intentos fallidos. Vuelve a intentarlo en ${wait} min.` });
-    const email = safe(req.body?.email).toLowerCase(),
-      password = String(req.body?.password || '');
-    if (!sameText(email, commercialEmail) || !sameText(password, commercialPassword)) {
+    const user = await users.login(req.body?.email, req.body?.password);
+    if (!user) {
       registerLoginFail(ip);
       return res.status(401).json({ message: 'Credenciales inválidas.' });
     }
     loginFails.delete(ip);
-    res.json({
-      token: signSession(),
-      user: { email: commercialEmail, name: process.env.COMMERCIAL_NAME || 'Equipo Comercial KASAC' }
-    });
+    res.json({ token: signSession(user), user: publicUser(user) });
   });
+  app.get('/api/commercial/me', auth, (req, res) => res.json(req.user));
   // Estado del sistema para el Área Comercial: dónde se guardan los datos y si el correo está activo.
   app.get('/api/commercial/system', auth, (req, res) =>
     res.json({
@@ -283,12 +405,15 @@ if (commercialEnabled) {
       email: { enabled: notifier.enabled, provider: notifier.provider, to: notifier.to }
     })
   );
+  // En la bandeja cada solicitud lleva el estado de su cotización, FE, FA y el vencimiento (para resaltarlo).
+  const summary = l => ({
+    ...l,
+    quoteState: quoteState(l.quote),
+    quoteExpiry: expiryInfo(l.quote),
+    quoteTotal: l.quote ? { currency: l.quote.currency, ...totals(l.quote) } : null
+  });
   app.get('/api/commercial/requests', auth, async (req, res) =>
-    res.json(
-      (await store.all())
-        .map(normalize)
-        .map(l => ({ ...l, quoteTotal: l.quote ? { currency: l.quote.currency, ...totals(l.quote) } : null }))
-    )
+    res.json((await store.all()).map(normalize).map(summary))
   );
   const findLead = async id => {
     const l = (await store.all()).find(x => x.id === id);
@@ -298,7 +423,7 @@ if (commercialEnabled) {
     const lead = await findLead(req.params.id);
     if (!lead) return res.status(404).json({ message: 'Solicitud no encontrada.' });
     // Si aún no hay cotización, se propone un borrador armado con lo que eligió el cliente.
-    res.json({ ...lead, quoteDraft: lead.quote ? null : draftQuote(lead, catalog) });
+    res.json({ ...summary(lead), quoteDraft: lead.quote ? null : draftQuote(lead, catalog) });
   });
 
   // Cotización
@@ -306,39 +431,120 @@ if (commercialEnabled) {
     const result = await store.update(rows => {
       const row = rows.find(x => x.id === req.params.id);
       if (!row) return { status: 404, message: 'Solicitud no encontrada.' };
-      if (normalize(row).status === 'APPROVED')
-        return { status: 409, message: 'La cotización está aprobada. Reábrala para editarla.' };
+      const state = quoteState(row.quote);
+      if (state === 'APROBADA' || state === 'RECHAZADA')
+        return { status: 409, message: 'El cliente ya respondió esta cotización; no se puede modificar.' };
       const now = new Date().toISOString();
-      const base = row.quote || draftQuote(row, catalog);
+      const base = row.quote || { ...draftQuote(row, catalog), state: 'BORRADOR' };
       const quote = sanitizeQuote(req.body, base);
       quote.number = base.number || nextQuoteNumber(rows);
       quote.version = (base.version || 0) + 1;
       quote.createdAt = base.createdAt || now;
       quote.updatedAt = now;
+      quote.state = state || 'BORRADOR';
       row.quote = quote;
-      if (['NEW', 'CONTACTED', 'NEGOTIATING'].includes(row.status)) row.status = 'QUOTED';
+      addEvent(
+        row,
+        req.user.name,
+        `Cotización ${quote.number} guardada (versión ${quote.version})`,
+        state === 'EMITIDA' ? 'Modificada después de emitida' : ''
+      );
       row.updatedAt = now;
       return { lead: row };
     });
     if (result.status) return res.status(result.status).json({ message: result.message });
-    res.json(normalize(result.lead));
+    res.json(summary(normalize(result.lead)));
   });
-  const setApproval = approve => async (req, res) => {
+  /** Cambia la cotización dentro de store.update y responde con la solicitud actualizada. */
+  const quoteAction = fn => async (req, res) => {
     const result = await store.update(rows => {
       const row = rows.find(x => x.id === req.params.id);
       if (!row) return { status: 404, message: 'Solicitud no encontrada.' };
       if (!row.quote) return { status: 409, message: 'Primero guarde la cotización.' };
-      const now = new Date().toISOString();
-      row.status = approve ? 'APPROVED' : 'QUOTED';
-      row.quote.approvedAt = approve ? now : null;
-      row.updatedAt = now;
-      return { lead: row };
+      return fn(row, req);
     });
     if (result.status) return res.status(result.status).json({ message: result.message });
-    res.json(normalize(result.lead));
+    res.json(summary(normalize(result.lead)));
   };
-  app.post('/api/commercial/requests/:id/quote/approve', auth, setApproval(true));
-  app.post('/api/commercial/requests/:id/quote/reopen', auth, setApproval(false));
+  // Emitir: la cotización se envía al cliente y queda pendiente por aprobar. Aquí se registra la FE.
+  app.post(
+    '/api/commercial/requests/:id/quote/emit',
+    auth,
+    quoteAction((row, req) => {
+      const q = row.quote;
+      const state = quoteState(q);
+      if (state === 'APROBADA' || state === 'RECHAZADA')
+        return { status: 409, message: 'El cliente ya respondió esta cotización.' };
+      const now = new Date().toISOString();
+      const first = !q.issuedAt;
+      if (first) q.issuedAt = now;
+      q.lastSentAt = now;
+      q.state = 'EMITIDA';
+      row.status = 'QUOTED';
+      row.updatedAt = now;
+      addEvent(
+        row,
+        req.user.name,
+        first
+          ? `Cotización ${q.number} emitida y enviada al cliente`
+          : `Cotización ${q.number} reenviada al cliente`,
+        first ? `Fecha de emisión (FE): ${now.slice(0, 10)}` : `Versión ${q.version}`
+      );
+      return { lead: row };
+    })
+  );
+  // Comercial registra la respuesta que el cliente dio por correo o teléfono (con la fecha de ese correo).
+  app.post(
+    '/api/commercial/requests/:id/quote/response',
+    auth,
+    quoteAction((row, req) => {
+      const raw = safe(req.body?.date);
+      let date;
+      if (raw) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return { status: 400, message: 'Fecha no válida.' };
+        // Respuesta del mismo día de la emisión: se toma la hora actual para no quedar antes de la FE.
+        const today = new Date().toISOString().slice(0, 10);
+        date = raw === today ? new Date().toISOString() : `${raw}T12:00:00.000Z`;
+        if (raw > today) return { status: 400, message: 'La fecha no puede ser futura.' };
+        if (raw === row.quote.issuedAt?.slice(0, 10) && Date.parse(date) < Date.parse(row.quote.issuedAt))
+          date = row.quote.issuedAt;
+      }
+      const channel = safe(req.body?.channel) || 'correo';
+      return answerQuote(row, {
+        decision: req.body?.decision,
+        reason: req.body?.reason,
+        by: `${req.user.name} (respuesta por ${channel})`,
+        date
+      });
+    })
+  );
+  // Corregir una respuesta registrada por error (solo administrador): vuelve a pendiente por aprobar.
+  app.post(
+    '/api/commercial/requests/:id/quote/undo-response',
+    auth,
+    adminOnly,
+    quoteAction((row, req) => {
+      const q = row.quote;
+      const state = quoteState(q);
+      if (state !== 'APROBADA' && state !== 'RECHAZADA')
+        return { status: 409, message: 'La cotización no tiene una respuesta registrada.' };
+      const reason = safe(req.body?.reason);
+      if (!reason) return { status: 400, message: 'Indique por qué se corrige la respuesta.' };
+      q.state = q.issuedAt ? 'EMITIDA' : 'BORRADOR';
+      q.approvedAt = null;
+      q.rejectedAt = null;
+      q.rejectionReason = null;
+      row.status = 'QUOTED';
+      row.updatedAt = new Date().toISOString();
+      addEvent(
+        row,
+        req.user.name,
+        `Respuesta de ${q.number} anulada (estaba ${state.toLowerCase()})`,
+        reason
+      );
+      return { lead: row };
+    })
+  );
 
   // Fotos de cada lado (capturadas en el visor del Área Comercial)
   app.put('/api/commercial/requests/:id/photos', auth, jsonPhotos, async (req, res) => {
@@ -384,16 +590,32 @@ if (commercialEnabled) {
     const lead = await store.update(rows => {
       const row = rows.find(x => x.id === req.params.id);
       if (!row) return null;
-      // Cotizada y Aprobada solo se asignan al guardar y al aprobar la cotización.
-      if (['NEW', 'CONTACTED', 'NEGOTIATING', 'LOST'].includes(req.body?.status))
-        row.status = req.body.status;
-      if (typeof req.body?.commercialNotes === 'string') row.commercialNotes = safe(req.body.commercialNotes);
+      // Cotizada, Aprobada y Rechazada las asigna el sistema; a mano solo se eligen los estados previos.
+      const status = req.body?.status;
+      if (MANUAL_STATUSES.includes(status) && status !== row.status) {
+        addEvent(
+          row,
+          req.user.name,
+          `Estado: ${STATUS_TEXT[row.status] || row.status} → ${STATUS_TEXT[status]}`
+        );
+        row.status = status;
+      }
+      if (
+        typeof req.body?.commercialNotes === 'string' &&
+        safe(req.body.commercialNotes) !== row.commercialNotes
+      ) {
+        row.commercialNotes = safe(req.body.commercialNotes);
+        addEvent(row, req.user.name, 'Notas internas actualizadas');
+      }
       row.updatedAt = new Date().toISOString();
       return row;
     });
     if (!lead) return res.status(404).json({ message: 'Solicitud no encontrada.' });
-    res.json(lead);
+    res.json(summary(normalize(lead)));
   });
+
+  // Módulos de clientes, indicadores, histórico, avisos y usuarios (modulos.js).
+  registerModules(app, { storage, store, users, auth, adminOnly, safe, normalize });
 }
 
 // Las apps Angular leen la dirección de la API de config.js: aquí siempre es este mismo servidor.
@@ -448,7 +670,7 @@ async function purgeExpired() {
       .filter(
         r =>
           !r.quote &&
-          !['QUOTED', 'APPROVED', 'WON'].includes(r.status) &&
+          !['QUOTED', 'APPROVED', 'REJECTED', 'WON'].includes(r.status) &&
           new Date(r.createdAt).getTime() < limit
       )
       .map(r => r.id);
@@ -466,6 +688,13 @@ async function purgeExpired() {
     );
 }
 purgeExpired().catch(e => console.error('Limpieza fallida:', e.message));
+// Primer arranque: crea el administrador con COMMERCIAL_EMAIL / COMMERCIAL_PASSWORD.
+if (commercialEnabled)
+  await users.ensureAdmin({
+    email: commercialEmail,
+    password: commercialPassword,
+    name: process.env.COMMERCIAL_NAME || 'Administrador'
+  });
 setInterval(
   () => purgeExpired().catch(e => console.error('Limpieza fallida:', e.message)),
   12 * 36e5

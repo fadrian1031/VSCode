@@ -1,0 +1,121 @@
+<div class="page">
+  <app-commercial-nav />
+  <main>
+    <div class="head">
+      <div>
+        <div class="eyebrow">Registro histórico · pre-prueba</div>
+        <h1>Cotizaciones anteriores al sistema</h1>
+        <p>
+          Importe desde Excel las cotizaciones del ERP (número, cliente, fecha de emisión, estado y fecha de
+          aprobación tomada del correo). Con ellas el sistema calcula los indicadores de la pre-prueba.
+        </p>
+      </div>
+      <div class="actions">
+        <button class="btn secondary" type="button" (click)="template()">Descargar plantilla</button>
+        <label class="btn primary upload" [class.disabled]="busy()">
+          {{ busy() ? 'Importando…' : 'Importar Excel' }}
+          <input #file type="file" accept=".xlsx" (change)="upload(file)" [disabled]="busy()" hidden />
+        </label>
+      </div>
+    </div>
+
+    @if (error()) {
+      <div class="alert error">{{ error() }}</div>
+    }
+    @if (result(); as r) {
+      <div class="alert" [class.warn]="r.errors.length">
+        @if (r.added || r.updated) {
+          <b>{{ r.added }} cotizaciones nuevas y {{ r.updated }} actualizadas.</b>
+          Total en el registro: {{ r.total }}.
+        }
+        @if (r.errors.length) {
+          <p>{{ r.errors.length }} fila(s) no se importaron:</p>
+          <ul>
+            @for (e of r.errors.slice(0, 15); track $index) {
+              <li>Fila {{ e.fila }}: {{ e.motivo }}</li>
+            }
+          </ul>
+        }
+      </div>
+    }
+
+    @if (summary(); as s) {
+      <section class="summary">
+        <div>
+          <small>Cotizaciones</small>
+          <b>{{ s.tc }}</b>
+        </div>
+        <div>
+          <small>Aprobadas</small>
+          <b class="ok">{{ s.nca }}</b>
+          <span>{{ s.pca ?? '—' }} %</span>
+        </div>
+        <div>
+          <small>Rechazadas</small>
+          <b class="bad">{{ s.ncr }}</b>
+          <span>{{ s.pcr ?? '—' }} %</span>
+        </div>
+        <div>
+          <small>Pendientes</small>
+          <b>{{ s.ncp }}</b>
+          <span>{{ s.pcp ?? '—' }} %</span>
+        </div>
+        <div>
+          <small>TPA</small>
+          <b>{{ s.tpa ?? '—' }}</b>
+          <span>días · n = {{ s.nTpa }}</span>
+        </div>
+      </section>
+    }
+
+    <div class="toolbar">
+      <div class="filters">
+        @for (f of filters; track f.id) {
+          <button type="button" [class.active]="filter() === f.id" (click)="filter.set(f.id)">
+            {{ f.name }}
+          </button>
+        }
+      </div>
+      @if (session.isAdmin() && rows().length) {
+        <button class="text-btn danger" type="button" (click)="clearAll()">Borrar registro histórico</button>
+      }
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>N.º cotización</th>
+          <th>Cliente</th>
+          <th>Fecha de emisión (FE)</th>
+          <th>Estado</th>
+          <th>Fecha de aprobación (FA)</th>
+          <th>Días (FA − FE)</th>
+          <th>Observación</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (r of shown(); track r.id) {
+          <tr>
+            <td>
+              <b>{{ r.numero }}</b>
+            </td>
+            <td>{{ r.cliente || '—' }}</td>
+            <td>{{ r.fechaEmision | date: 'dd/MM/yyyy' : 'UTC' }}</td>
+            <td>
+              <span class="state" [attr.data-state]="r.estado">{{ label[r.estado] }}</span>
+            </td>
+            <td>{{ r.fechaAprobacion ? (r.fechaAprobacion | date: 'dd/MM/yyyy' : 'UTC') : '—' }}</td>
+            <td class="num">{{ days(r) ?? '—' }}</td>
+            <td class="obs">{{ r.observacion }}</td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="7" class="empty">
+              Todavía no hay cotizaciones históricas. Descargue la plantilla, llénela con el registro del ERP
+              e impórtela.
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </main>
+</div>

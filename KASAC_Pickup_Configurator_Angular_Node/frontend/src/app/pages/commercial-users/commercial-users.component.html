@@ -1,0 +1,91 @@
+<div class="page">
+  <app-commercial-nav />
+  <main>
+    <div class="head">
+      <div class="eyebrow">Módulo de usuarios</div>
+      <h1>Usuarios y roles</h1>
+      <p>
+        El administrador gestiona los accesos y puede corregir una respuesta registrada por error. El rol
+        comercial atiende solicitudes, cotiza y ve los indicadores.
+      </p>
+    </div>
+    @if (message(); as m) {
+      <div class="alert" [class.error]="m.type === 'error'">{{ m.text }}</div>
+    }
+    <div class="grid">
+      <table>
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th>Correo</th>
+            <th>Rol</th>
+            <th>Estado</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (u of users(); track u.id) {
+            <tr [class.inactive]="!u.active">
+              <td>
+                <b>{{ u.name }}</b>
+                @if (u.id === session.user()?.id) {
+                  <small>(usted)</small>
+                }
+              </td>
+              <td>{{ u.email }}</td>
+              <td>
+                <select
+                  [ngModel]="u.role"
+                  (ngModelChange)="setRole(u, $event)"
+                  [attr.aria-label]="'Rol de ' + u.name"
+                >
+                  <option value="admin">Administrador</option>
+                  <option value="comercial">Comercial</option>
+                </select>
+              </td>
+              <td>{{ u.active ? 'Activo' : 'Inactivo' }}</td>
+              <td class="row-actions">
+                <button class="text-btn" type="button" (click)="resetPassword(u)">Cambiar clave</button>
+                <button class="text-btn" type="button" [class.danger]="u.active" (click)="toggle(u)">
+                  {{ u.active ? 'Desactivar' : 'Activar' }}
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+
+      <form class="new" (ngSubmit)="create()">
+        <h2>Nuevo usuario</h2>
+        <div class="field">
+          <label for="u-name">Nombre</label>
+          <input id="u-name" name="name" [(ngModel)]="form.name" required />
+        </div>
+        <div class="field">
+          <label for="u-email">Correo</label>
+          <input id="u-email" name="email" type="email" [(ngModel)]="form.email" required />
+        </div>
+        <div class="field">
+          <label for="u-pass">Contraseña inicial</label>
+          <input
+            id="u-pass"
+            name="password"
+            type="password"
+            [(ngModel)]="form.password"
+            minlength="8"
+            required
+          />
+          <small>Mínimo 8 caracteres. El usuario puede pedir que se la cambien.</small>
+        </div>
+        <div class="field">
+          <label for="u-role">Rol</label>
+          <select id="u-role" name="role" [(ngModel)]="form.role">
+            <option value="comercial">Comercial</option>
+            <option value="admin">Administrador</option>
+          </select>
+        </div>
+        <button class="btn primary" type="submit">Crear usuario</button>
+      </form>
+    </div>
+  </main>
+</div>

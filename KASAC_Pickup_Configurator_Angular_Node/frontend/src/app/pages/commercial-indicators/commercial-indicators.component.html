@@ -1,0 +1,254 @@
+<div class="page">
+  <app-commercial-nav />
+  <main>
+    <div class="head">
+      <div>
+        <div class="eyebrow">Módulo de indicadores</div>
+        <h1>Proceso de aprobación de cotizaciones</h1>
+        <p>
+          Calculados en el momento con los datos del sistema. Pre-prueba: registro histórico importado.
+          Post-prueba: cotizaciones gestionadas con el sistema web.
+        </p>
+      </div>
+      <div class="downloads">
+        <button class="btn secondary" (click)="download('pre')" [disabled]="!!busy()">
+          {{ busy() === 'pre' ? 'Generando…' : 'Fichas pre-prueba (Excel)' }}
+        </button>
+        <button class="btn primary" (click)="download('post')" [disabled]="!!busy()">
+          {{ busy() === 'post' ? 'Generando…' : 'Fichas post-prueba (Excel)' }}
+        </button>
+      </div>
+    </div>
+
+    <form class="period" (ngSubmit)="load()">
+      <span class="label">Período de la post-prueba</span>
+      <label>
+        Desde
+        <input type="date" name="desde" [(ngModel)]="desde" />
+      </label>
+      <label>
+        Hasta
+        <input type="date" name="hasta" [(ngModel)]="hasta" />
+      </label>
+      <button class="btn secondary" type="submit">Aplicar</button>
+      @if (desde || hasta) {
+        <button class="text-btn" type="button" (click)="clear()">Todo el período</button>
+      }
+    </form>
+
+    @if (error()) {
+      <div class="alert">{{ error() }}</div>
+    }
+
+    @if (data(); as d) {
+      <section class="cards">
+        @for (c of cards(); track c.def.id) {
+          <article class="card" [attr.data-ok]="c.reachesGoal">
+            <header>
+              <span class="sigla">{{ c.def.sigla }}</span>
+              <h2>{{ c.def.nombre }}</h2>
+            </header>
+            <div class="values">
+              <div>
+                <small>Pre-prueba</small>
+                <b class="pre">{{ fmt(c.pre, c.def.unidad) }}</b>
+              </div>
+              <div>
+                <small>Post-prueba</small>
+                <b class="post">{{ fmt(c.post, c.def.unidad) }}</b>
+              </div>
+              <div>
+                <small>Meta</small>
+                <b class="meta">{{ fmt(c.def.meta, c.def.unidad) }}</b>
+              </div>
+            </div>
+            <footer>
+              @if (c.improved !== null) {
+                <span class="delta" [class.good]="c.improved" [class.bad]="!c.improved">
+                  {{ delta(c) }} {{ c.improved ? 'mejora' : 'sin mejora' }}
+                </span>
+              }
+              <span class="counts">{{ c.counts }}</span>
+              <code>{{ c.def.formula }}</code>
+            </footer>
+          </article>
+        }
+      </section>
+
+      <section class="charts">
+        <article class="chart">
+          <h3>Pre-prueba, post-prueba y meta (%)</h3>
+          <div class="legend">
+            <span>
+              <i class="sw pre"></i>
+              Pre-prueba
+            </span>
+            <span>
+              <i class="sw post"></i>
+              Post-prueba
+            </span>
+            <span>
+              <i class="sw meta"></i>
+              Meta
+            </span>
+          </div>
+          @for (c of percentCards(); track c.def.id) {
+            <div class="bar-group">
+              <span class="bar-label">{{ c.def.sigla }}</span>
+              <div class="bars">
+                <div class="track">
+                  <div class="bar pre" [style.width.%]="c.pre ?? 0"></div>
+                  <span class="val">{{ fmt(c.pre, '%') }}</span>
+                </div>
+                <div class="track">
+                  <div class="bar post" [style.width.%]="c.post ?? 0"></div>
+                  <span class="val">{{ fmt(c.post, '%') }}</span>
+                </div>
+                <i class="goal" [style.left.%]="c.def.meta" [title]="'Meta ' + c.def.meta + ' %'"></i>
+              </div>
+            </div>
+          }
+          <div class="axis">
+            <span>0 %</span>
+            <span>50 %</span>
+            <span>100 %</span>
+          </div>
+        </article>
+
+        @if (tpaCard(); as t) {
+          <article class="chart">
+            <h3>Tiempo promedio de aprobación (días)</h3>
+            <div class="legend">
+              <span>
+                <i class="sw pre"></i>
+                Pre-prueba
+              </span>
+              <span>
+                <i class="sw post"></i>
+                Post-prueba
+              </span>
+              <span>
+                <i class="sw meta"></i>
+                Meta
+              </span>
+            </div>
+            <div class="bar-group">
+              <span class="bar-label">TPA</span>
+              <div class="bars">
+                <div class="track">
+                  <div class="bar pre" [style.width.%]="((t.pre ?? 0) / tpaMax()) * 100"></div>
+                  <span class="val">{{ fmt(t.pre, 'días') }}</span>
+                </div>
+                <div class="track">
+                  <div class="bar post" [style.width.%]="((t.post ?? 0) / tpaMax()) * 100"></div>
+                  <span class="val">{{ fmt(t.post, 'días') }}</span>
+                </div>
+                <i
+                  class="goal"
+                  [style.left.%]="(t.def.meta / tpaMax()) * 100"
+                  [title]="'Meta ' + t.def.meta + ' días'"
+                ></i>
+              </div>
+            </div>
+            <p class="note">
+              TPA = Σ(FA − FE) / n. Solo entran las cotizaciones aprobadas que tienen fecha de emisión y de
+              aprobación.
+              @if (d.post.sinFechaValida) {
+                {{ d.post.sinFechaValida }} aprobada(s) de la post-prueba sin fecha válida no entran al
+                promedio.
+              }
+            </p>
+          </article>
+        }
+      </section>
+
+      <section class="tables">
+        <article>
+          <h3>Datos usados en el cálculo</h3>
+          <table>
+            <thead>
+              <tr>
+                <th></th>
+                <th>Pre-prueba</th>
+                <th>Post-prueba</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Total de cotizaciones registradas (TC)</td>
+                <td>{{ d.pre.tc }}</td>
+                <td>{{ d.post.tc }}</td>
+              </tr>
+              <tr>
+                <td>Aprobadas (NCA)</td>
+                <td>{{ d.pre.nca }}</td>
+                <td>{{ d.post.nca }}</td>
+              </tr>
+              <tr>
+                <td>Rechazadas (NCR)</td>
+                <td>{{ d.pre.ncr }}</td>
+                <td>{{ d.post.ncr }}</td>
+              </tr>
+              <tr>
+                <td>Pendientes por aprobar (NCP)</td>
+                <td>{{ d.pre.ncp }}</td>
+                <td>{{ d.post.ncp }}</td>
+              </tr>
+              <tr>
+                <td>Aprobadas con fecha válida (n del TPA)</td>
+                <td>{{ d.pre.nTpa }}</td>
+                <td>{{ d.post.nTpa }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="note">
+            Pre-prueba:
+            {{
+              d.pre.tc
+                ? (d.pre.desde | date: 'dd/MM/yyyy') + ' a ' + (d.pre.hasta | date: 'dd/MM/yyyy')
+                : 'sin registro histórico importado'
+            }}. Post-prueba:
+            {{
+              d.periodo.desde || d.periodo.hasta
+                ? (d.periodo.desde || 'inicio') + ' a ' + (d.periodo.hasta || 'hoy')
+                : 'todo el período'
+            }}. Calculado el {{ d.generadoEn | date: 'dd/MM/yyyy HH:mm' }}.
+          </p>
+        </article>
+        <article>
+          <h3>Evolución mensual de la post-prueba</h3>
+          @if (d.evolucion.length) {
+            <table>
+              <thead>
+                <tr>
+                  <th>Mes</th>
+                  <th>TC</th>
+                  <th>PCA</th>
+                  <th>PCR</th>
+                  <th>PCP</th>
+                  <th>TPA</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (m of d.evolucion; track m.mes) {
+                  <tr>
+                    <td>{{ monthName(m.mes) }}</td>
+                    <td>{{ m.tc }}</td>
+                    <td>{{ fmt(m.pca, '%') }}</td>
+                    <td>{{ fmt(m.pcr, '%') }}</td>
+                    <td>{{ fmt(m.pcp, '%') }}</td>
+                    <td>{{ fmt(m.tpa, 'días') }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          } @else {
+            <p class="note">Todavía no hay cotizaciones registradas en el sistema para este período.</p>
+          }
+        </article>
+      </section>
+    } @else if (!error()) {
+      <p class="note">Calculando indicadores…</p>
+    }
+  </main>
+</div>

@@ -86,5 +86,29 @@ export function createNotifier(env = process.env) {
     console.log(`[aviso] Correo enviado a ${to.join(', ')} por ${provider}: ${subject}`);
   }
 
-  return { provider, enabled: provider !== 'ninguno', to, newLead };
+  /** Correo cuando el cliente aprueba o rechaza su cotización desde el enlace. */
+  async function quoteAnswered(lead, origin) {
+    const q = lead.quote;
+    const approved = q.state === 'APROBADA';
+    const who = lead.customer.type === 'corporate' ? lead.customer.companyName : lead.customer.fullName;
+    const link = `${origin}/comercial/solicitud/${lead.id}`;
+    const subject = `${q.number} ${approved ? 'aprobada' : 'rechazada'} por ${who}`;
+    const reason = !approved && q.rejectionReason ? `Motivo indicado: ${q.rejectionReason}` : '';
+    const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#232834;max-width:600px">
+  <div style="border-bottom:3px solid #1C85D1;padding:12px 0"><b style="font-size:20px">KA<span style="color:#1C85D1">SAC</span></b> · Configurador 3D</div>
+  <h2 style="font-size:18px;margin:18px 0 6px;color:${approved ? '#1E9E5A' : '#C2410C'}">Cotización ${esc(q.number)} ${approved ? 'aprobada' : 'rechazada'}</h2>
+  <p style="margin:0 0 8px">${esc(who)} respondió desde su enlace el ${esc(new Date(approved ? q.approvedAt : q.rejectedAt).toLocaleString('es-PE', { timeZone: 'America/Lima' }))}.</p>
+  ${reason ? `<p style="margin:0 0 8px">${esc(reason)}</p>` : ''}
+  <p style="margin:22px 0"><a href="${esc(link)}" style="background:#1C85D1;color:#fff;text-decoration:none;padding:10px 18px;border-radius:4px;font-weight:bold">Ver en el Área Comercial</a></p>
+</div>`;
+    const text = `${subject}\n${reason}\nVer: ${link}\n`;
+    if (provider === 'ninguno') {
+      console.log(`[aviso] ${subject} (correo no configurado)`);
+      return;
+    }
+    await send({ subject, html, text });
+    console.log(`[aviso] Correo enviado a ${to.join(', ')} por ${provider}: ${subject}`);
+  }
+
+  return { provider, enabled: provider !== 'ninguno', to, newLead, quoteAnswered };
 }

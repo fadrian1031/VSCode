@@ -1,0 +1,65 @@
+<header class="cnav">
+  <a class="kasac-logo" [routerLink]="link('')">
+    <img src="assets/img/logo-kasac.png" alt="KASAC" width="83" height="40" />
+  </a>
+  <nav aria-label="Módulos del Área Comercial">
+    <a [routerLink]="link('')" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">
+      Solicitudes
+    </a>
+    <a [routerLink]="link('clientes')" routerLinkActive="active">Clientes</a>
+    <a [routerLink]="link('indicadores')" routerLinkActive="active">Indicadores</a>
+    <a [routerLink]="link('historico')" routerLinkActive="active">Histórico</a>
+    @if (session.isAdmin()) {
+      <a [routerLink]="link('usuarios')" routerLinkActive="active">Usuarios</a>
+    }
+  </nav>
+  <div class="right">
+    <div class="bell-wrap">
+      <button
+        type="button"
+        class="bell"
+        (click)="toggle($event)"
+        [attr.aria-expanded]="open()"
+        aria-label="Avisos"
+        title="Avisos"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+          <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+        </svg>
+        @if (pending().length) {
+          <span class="badge">{{ pending().length }}</span>
+        }
+      </button>
+      @if (open()) {
+        <div class="panel" (click)="$event.stopPropagation()">
+          <div class="panel-head">
+            <b>Avisos</b>
+            @if (pending().length) {
+              <button type="button" class="text-btn" (click)="dismiss(pendingKeys())">Descartar todos</button>
+            }
+          </div>
+          @for (n of pending(); track n.key) {
+            <div class="notice" [attr.data-nivel]="n.nivel">
+              <button type="button" class="notice-body" (click)="go(n)">
+                <b>{{ n.titulo }}</b>
+                <small>{{ n.detalle }}</small>
+                <time>{{ n.fecha | date: 'dd/MM/yyyy HH:mm' }}</time>
+              </button>
+              <button type="button" class="x" (click)="dismiss([n.key], $event)" aria-label="Descartar aviso">
+                ×
+              </button>
+            </div>
+          } @empty {
+            <p class="empty-note">No hay avisos nuevos.</p>
+          }
+        </div>
+      }
+    </div>
+    <div class="user">
+      <b>{{ session.user()?.name }}</b>
+      <small>{{ session.isAdmin() ? 'Administrador' : 'Comercial' }}</small>
+    </div>
+    <button type="button" class="logout" (click)="logout()">Salir</button>
+  </div>
+</header>

@@ -44,18 +44,22 @@ Sistema completo del nuevo flujo comercial de KASAC, en un solo servidor:
 - Enlace público 3D en modo lectura después del envío (se abre dentro de la web).
 
 ### Área Comercial (`/comercial`)
-- Login interno; app separada que no se enlaza desde la web pública.
-- Bandeja con buscador, contadores y monto cotizado por solicitud.
-- Estados: Nueva, Contactado, Negociando, Cotizada, Aprobada, Perdida.
-- Cotización por secciones con totales e IGV, PDF formal, Excel con el formato de Grupo KA y aprobación.
-- Fotos de cada lado del vehículo, tomadas desde el visor 3D.
-- Datos completos del cliente.
-- Vehículo y accesorios seleccionados.
-- Fichas técnicas incluidas en el snapshot.
-- Viniles/reflectivos y sus medidas.
-- Visor 3D de solo lectura.
-- Vista exterior / interior.
-- Notas internas comerciales.
+Aplicación interna con login; no se enlaza desde la web pública. Módulos:
+
+1. **Solicitudes**: bandeja con buscador, filtros por estado, tiempo de aprobación y cotizaciones por vencer resaltadas.
+   Cada solicitud guarda su **historial** (quién hizo cada cambio y cuándo).
+2. **Cotizaciones**: borrador por secciones (equipamiento, sistema eléctrico, estructura metálica, stickers), IGV,
+   fotos de cada lado tomadas del visor 3D, PDF y Excel. **Emitir** la envía al cliente y registra la fecha de emisión (FE).
+3. **Aprobación del cliente**: en su enlace el cliente ve el 3D y la cotización, y la **aprueba** (fecha de aprobación, FA)
+   o la **rechaza** con un motivo. Si responde por correo o teléfono, Comercial registra la respuesta con su fecha.
+4. **Clientes**: empresas y personas con el historial y el resultado de sus cotizaciones.
+5. **Indicadores**: PCA, PCR, PCP y TPA de la tesis, calculados con los datos del sistema; pre-prueba vs. post-prueba vs. meta
+   y fichas de observación en Excel.
+6. **Histórico (pre-prueba)**: importa desde Excel las cotizaciones anteriores al sistema.
+7. **Avisos**: nueva solicitud, respuesta del cliente, cotización por vencer o vencida.
+8. **Usuarios y roles**: administrador y comercial.
+
+Detalle de cada módulo y de cómo se calculan los indicadores: `docs/MODULOS_E_INDICADORES.md`.
 
 ## Credenciales demo de Comercial
 

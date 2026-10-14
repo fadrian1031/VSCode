@@ -1,16 +1,24 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
+import { CommercialNavComponent } from '../../components/commercial-nav/commercial-nav.component';
 import { ApiService } from '../../core/api.service';
 import { SessionService } from '../../core/session.service';
 import { LeadRequest, LeadStatus } from '../../models/domain';
 import { COMMERCIAL_PATH } from '../../app.variant';
-import { CURRENCY_SYMBOL, STATUS_LABEL, STATUS_ORDER, money } from '../../core/commercial';
+import {
+  CURRENCY_SYMBOL,
+  QUOTE_STATE_LABEL,
+  STATUS_LABEL,
+  STATUS_ORDER,
+  duration,
+  money
+} from '../../core/commercial';
 
 @Component({
   selector: 'app-commercial-dashboard',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, CommercialNavComponent],
   templateUrl: './commercial-dashboard.component.html',
   styleUrl: './commercial-dashboard.component.css'
 })
@@ -18,6 +26,7 @@ export class CommercialDashboardComponent implements OnInit {
   readonly base = COMMERCIAL_PATH;
   readonly statuses = STATUS_ORDER;
   readonly label = STATUS_LABEL;
+  readonly quoteLabel = QUOTE_STATE_LABEL;
   readonly symbol = CURRENCY_SYMBOL;
   readonly money = money;
   leads = signal<LeadRequest[]>([]);
@@ -74,9 +83,37 @@ export class CommercialDashboardComponent implements OnInit {
       }
     });
   }
-  logout() {
-    this.session.clear();
-    this.router.navigateByUrl(`${this.base}/login`);
+  /** Cotizaciones emitidas por estado (pendientes, aprobadas, rechazadas) para las tarjetas superiores. */
+  readonly quoteCounts = computed(() => {
+    const c = { EMITIDA: 0, APROBADA: 0, RECHAZADA: 0, vencidas: 0 };
+    for (const l of this.leads()) {
+      if (l.quoteState && l.quoteState !== 'BORRADOR') c[l.quoteState]++;
+      if (l.quoteExpiry?.estado === 'vencida') c.vencidas++;
+    }
+    return c;
+  });
+  /**
+   * Tiempo de aprobación (como el TPA de la tesis): de la fecha de emisión (FE) a la de aprobación (FA).
+   * Si sigue pendiente, muestra cuánto lleva esperando respuesta.
+   */
+  approvalTime(l: LeadRequest): {
+    state: 'approved' | 'open' | 'cancelled' | 'none';
+    label: string;
+    detail: string;
+  } {
+    const q = l.quote;
+    if (!q || l.quoteState === 'BORRADOR') return { state: 'none', label: '—', detail: 'Aún no emitida' };
+    if (l.quoteState === 'RECHAZADA')
+      return { state: 'cancelled', label: 'Rechazada', detail: 'Sin aprobación' };
+    if (l.quoteState === 'APROBADA')
+      return q.issuedAt && q.approvedAt
+        ? {
+            state: 'approved',
+            label: duration(q.issuedAt, q.approvedAt),
+            detail: 'De la emisión a la aprobación'
+          }
+        : { state: 'approved', label: 'Aprobada', detail: 'Sin fecha de emisión registrada' };
+    return { state: 'open', label: 'En espera', detail: `Lleva ${duration(q.issuedAt!, Date.now())}` };
   }
   link(l: LeadRequest) {
     return `${this.base}/solicitud/${l.id}`;

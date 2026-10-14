@@ -17,6 +17,13 @@ create table if not exists kasac_fotos (
   imagen bytea not null,
   actualizado timestamptz not null default now(),
   primary key (solicitud, vista)
+);
+create table if not exists kasac_registros (
+  coleccion text not null,
+  id text not null,
+  datos jsonb not null,
+  actualizado timestamptz not null default now(),
+  primary key (coleccion, id)
 );`;
 const LOCK_KEY = 872341; // bloqueo de aplicación: una modificación a la vez, aunque haya varias instancias
 
@@ -91,5 +98,56 @@ export async function createPgStorage(connectionString, views) {
     }
   };
 
-  return { kind: 'postgres', persistent: true, store: { all, update }, photos, close: () => pool.end() };
+  // Colecciones con nombre (usuarios, histórico, avisos): una fila por registro en kasac_registros.
+  function collection(name) {
+    const read = async db =>
+      (await db.query('select datos from kasac_registros where coleccion = $1 order by id', [name])).rows.map(
+        r => r.datos
+      );
+    return {
+      all: () => read(pool),
+      async update(fn) {
+        const client = await pool.connect();
+        try {
+          await client.query('begin');
+          await client.query('select pg_advisory_xact_lock($1)', [LOCK_KEY]);
+          const list = await read(client);
+          const before = new Map(list.map(r => [r.id, JSON.stringify(r)]));
+          const result = await fn(list);
+          const after = new Set();
+          for (const row of list) {
+            after.add(row.id);
+            const json = JSON.stringify(row);
+            if (before.get(row.id) === json) continue;
+            await client.query(
+              'insert into kasac_registros (coleccion, id, datos) values ($1, $2, $3) on conflict (coleccion, id) do update set datos = excluded.datos, actualizado = now()',
+              [name, row.id, json]
+            );
+          }
+          const removed = [...before.keys()].filter(id => !after.has(id));
+          if (removed.length)
+            await client.query('delete from kasac_registros where coleccion = $1 and id = any($2::text[])', [
+              name,
+              removed
+            ]);
+          await client.query('commit');
+          return result;
+        } catch (e) {
+          await client.query('rollback').catch(() => {});
+          throw e;
+        } finally {
+          client.release();
+        }
+      }
+    };
+  }
+
+  return {
+    kind: 'postgres',
+    persistent: true,
+    store: { all, update },
+    collection,
+    photos,
+    close: () => pool.end()
+  };
 }

@@ -153,19 +153,15 @@
             <h3>Gestión comercial</h3>
             <div class="field">
               <label for="d-status">Estado</label>
-              <select
-                id="d-status"
-                [(ngModel)]="status"
-                [disabled]="status === 'QUOTED' || status === 'APPROVED'"
-              >
+              <select id="d-status" [(ngModel)]="status" [disabled]="systemStatus()">
                 @for (s of manualStatuses; track s) {
                   <option [value]="s">{{ label[s] }}</option>
                 }
-                @if (status === 'QUOTED' || status === 'APPROVED') {
+                @if (systemStatus()) {
                   <option [value]="status">{{ label[status] }}</option>
                 }
               </select>
-              @if (status === 'QUOTED' || status === 'APPROVED') {
+              @if (systemStatus()) {
                 <small class="muted">Este estado lo define la cotización.</small>
               }
             </div>
@@ -185,27 +181,132 @@
               </button>
             </div>
           </section>
+          @if (l.history?.length) {
+            <section class="history">
+              <h3>Historial</h3>
+              <ol>
+                @for (h of l.history!.slice().reverse(); track $index) {
+                  <li>
+                    <time>{{ h.at | date: 'dd/MM/yyyy HH:mm' }}</time>
+                    <b>{{ h.action }}</b>
+                    <small>{{ h.by }}{{ h.detail ? ' · ' + h.detail : '' }}</small>
+                  </li>
+                }
+              </ol>
+            </section>
+          }
         </aside>
       } @else {
         @if (quote(); as q) {
           <section class="quote-panel" #quotePanel>
-            @if (approved()) {
-              <div class="approved-banner">
+            @if (quoteState() === 'APROBADA' || quoteState() === 'RECHAZADA') {
+              <div class="approved-banner" [class.rejected]="quoteState() === 'RECHAZADA'">
                 <div>
-                  <b>Cotización aprobada</b>
+                  <b>
+                    Cotización {{ quoteState() === 'APROBADA' ? 'aprobada' : 'rechazada' }} por el cliente
+                  </b>
                   <span>
-                    {{ q.number }} · {{ q.approvedAt | date: 'dd/MM/yyyy HH:mm' }} · {{ symbol[q.currency] }}
-                    {{ money(totals().total) }}
+                    {{ q.number }} · emitida {{ q.issuedAt | date: 'dd/MM/yyyy' }} ·
+                    {{ quoteState() === 'APROBADA' ? 'aprobada' : 'rechazada' }}
+                    {{
+                      (quoteState() === 'APROBADA' ? q.approvedAt : q.rejectedAt) | date: 'dd/MM/yyyy HH:mm'
+                    }}
+                    · {{ symbol[q.currency] }} {{ money(totals().total) }}
                   </span>
+                  @if (q.rejectionReason) {
+                    <span class="reason">Motivo: {{ q.rejectionReason }}</span>
+                  }
+                  @if (q.answeredBy) {
+                    <span class="reason">Registrado por: {{ q.answeredBy }}</span>
+                  }
                 </div>
-                <button class="btn secondary" (click)="reopen()" [disabled]="!!busy()">Reabrir</button>
+                @if (session.isAdmin()) {
+                  <button class="btn secondary" (click)="undoResponse()" [disabled]="!!busy()">
+                    Corregir respuesta
+                  </button>
+                }
               </div>
+            } @else if (quoteState() === 'EMITIDA') {
+              <div class="issued-banner" [attr.data-expiry]="l.quoteExpiry?.estado">
+                <div>
+                  <b>Pendiente por aprobar</b>
+                  <span>
+                    Emitida el {{ q.issuedAt | date: 'dd/MM/yyyy HH:mm' }} · vence el
+                    {{ l.quoteExpiry?.vence | date: 'dd/MM/yyyy' }}
+                    @if (l.quoteExpiry?.estado === 'por-vencer') {
+                      (en {{ l.quoteExpiry!.dias }} días)
+                    } @else if (l.quoteExpiry?.estado === 'vencida') {
+                      (venció hace {{ l.quoteExpiry!.dias }} días)
+                    }
+                  </span>
+                  <div class="link-row">
+                    <input
+                      readonly
+                      [value]="clientLink(l)"
+                      (focus)="$any($event.target).select()"
+                      aria-label="Enlace del cliente"
+                    />
+                    <button class="btn secondary small" (click)="copyLink(l)">Copiar enlace</button>
+                    <a class="btn secondary small" [href]="mailLink(l)">Enviar por correo</a>
+                  </div>
+                </div>
+                <button class="btn primary" (click)="openResponse()" [disabled]="!!busy()">
+                  Registrar respuesta del cliente
+                </button>
+              </div>
+              @if (showResponse()) {
+                <div class="response-form">
+                  <h3>Respuesta del cliente</h3>
+                  <p class="muted small">
+                    Use esto cuando el cliente responda por correo o teléfono. Si responde desde su enlace, se
+                    registra sola.
+                  </p>
+                  <div class="response-grid">
+                    <div class="field">
+                      <label for="r-decision">Respuesta</label>
+                      <select id="r-decision" [(ngModel)]="response.decision">
+                        <option value="aprobar">Aprobó la cotización</option>
+                        <option value="rechazar">Rechazó la cotización</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label for="r-date">Fecha de la respuesta</label>
+                      <input id="r-date" type="date" [(ngModel)]="response.date" [max]="today" />
+                    </div>
+                    <div class="field">
+                      <label for="r-channel">Medio</label>
+                      <select id="r-channel" [(ngModel)]="response.channel">
+                        <option value="correo">Correo</option>
+                        <option value="teléfono">Teléfono</option>
+                        <option value="WhatsApp">WhatsApp</option>
+                        <option value="reunión">Reunión</option>
+                      </select>
+                    </div>
+                    @if (response.decision === 'rechazar') {
+                      <div class="field wide">
+                        <label for="r-reason">Motivo del rechazo</label>
+                        <input
+                          id="r-reason"
+                          [(ngModel)]="response.reason"
+                          placeholder="Precio, plazo, eligió otro proveedor…"
+                        />
+                      </div>
+                    }
+                  </div>
+                  <div class="row-actions">
+                    <button class="btn secondary" (click)="showResponse.set(false)">Cancelar</button>
+                    <button class="btn primary" (click)="submitResponse()" [disabled]="busy() === 'response'">
+                      Registrar
+                    </button>
+                  </div>
+                </div>
+              }
             }
 
-            <div class="photos" [class.big]="approved()">
+            <div class="photos" [class.big]="locked()">
               <div class="photos-head">
                 <h3>Fotos del vehículo</h3>
-                <button class="text-btn" (click)="takePhotos()" [disabled]="!!busy() || approved()">
+                <button class="text-btn" (click)="takePhotos()" [disabled]="!!busy() || locked()">
                   {{
                     busy() === 'photos'
                       ? 'Tomando fotos…'
@@ -231,11 +332,13 @@
               }
             </div>
 
-            @if (approved()) {
+            @if (locked()) {
               <div class="approved-view">
                 <div class="summary-head">
                   <div>
-                    <div class="eyebrow">Cotización aprobada</div>
+                    <div class="eyebrow">
+                      Cotización {{ quoteState() === 'APROBADA' ? 'aprobada' : 'rechazada' }}
+                    </div>
                     <h2>
                       {{ q.number }}
                       <small>versión {{ q.version }}</small>
@@ -530,12 +633,18 @@
               <button class="btn secondary" (click)="download('pdf')" [disabled]="!!busy()">
                 {{ busy() === 'pdf' ? 'Generando…' : 'Descargar PDF' }}
               </button>
-              @if (!approved()) {
+              @if (!locked()) {
                 <button class="btn secondary" (click)="saveQuote()" [disabled]="!!busy()">
                   {{ busy() === 'save' || busy() === 'photos' ? 'Guardando…' : 'Guardar' }}
                 </button>
-                <button class="btn primary" (click)="approve()" [disabled]="!!busy()">
-                  Aprobar cotización
+                <button class="btn primary" (click)="emit()" [disabled]="!!busy()">
+                  {{
+                    busy() === 'emit'
+                      ? 'Emitiendo…'
+                      : quoteState() === 'EMITIDA'
+                        ? 'Guardar y reenviar'
+                        : 'Emitir y enviar al cliente'
+                  }}
                 </button>
               }
             </div>

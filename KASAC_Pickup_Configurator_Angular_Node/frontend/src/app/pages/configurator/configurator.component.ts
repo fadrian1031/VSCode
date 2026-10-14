@@ -91,13 +91,11 @@ export class ConfiguratorComponent implements OnInit {
 
   constructor(private api: ApiService) {}
   ngOnInit() {
-    this.api
-      .getCatalog()
-      .subscribe({
-        next: c => this.catalog.set(c),
-        error: () =>
-          this.error.set('No se pudo cargar el catálogo. Verifica que el backend Node.js esté iniciado.')
-      });
+    this.api.getCatalog().subscribe({
+      next: c => this.catalog.set(c),
+      error: () =>
+        this.error.set('No se pudo cargar el catálogo. Verifica que el backend Node.js esté iniciado.')
+    });
   }
   chooseVehicle(v: Vehicle) {
     this.vehicle.set(v);

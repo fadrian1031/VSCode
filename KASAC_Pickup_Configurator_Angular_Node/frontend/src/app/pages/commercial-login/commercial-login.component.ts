@@ -28,7 +28,7 @@ export class CommercialLoginComponent {
     this.error.set('');
     this.api.login(this.email, this.password).subscribe({
       next: r => {
-        this.session.setToken(r.token);
+        this.session.setToken(r.token, r.user);
         this.router.navigateByUrl(COMMERCIAL_PATH || '/');
       },
       error: e => {

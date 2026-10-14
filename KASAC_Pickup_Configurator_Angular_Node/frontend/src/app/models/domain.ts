@@ -120,7 +120,9 @@ export interface CustomerPayload {
   city?: string;
   notes?: string;
 }
-export type LeadStatus = 'NEW' | 'CONTACTED' | 'NEGOTIATING' | 'QUOTED' | 'APPROVED' | 'LOST';
+export type LeadStatus = 'NEW' | 'CONTACTED' | 'NEGOTIATING' | 'QUOTED' | 'APPROVED' | 'REJECTED' | 'LOST';
+/** Ciclo de la cotización: borrador → emitida (FE) → aprobada (FA) o rechazada. */
+export type QuoteState = 'BORRADOR' | 'EMITIDA' | 'APROBADA' | 'RECHAZADA';
 export type QuoteSection = 'equipamiento' | 'electrico' | 'metalica' | 'stickers';
 export type Currency = 'USD' | 'PEN';
 export interface QuoteItem {
@@ -158,7 +160,14 @@ export interface Quote {
   items: QuoteItem[];
   createdAt: string | null;
   updatedAt: string | null;
+  state?: QuoteState;
+  /** Fecha de emisión (FE): cuando se envió al cliente por primera vez. */
+  issuedAt?: string | null;
+  /** Fecha de aprobación (FA). */
   approvedAt: string | null;
+  rejectedAt?: string | null;
+  rejectionReason?: string | null;
+  answeredBy?: string;
 }
 export interface QuoteTotals {
   sections: { id: QuoteSection; name: string; subtotal: number }[];
@@ -184,12 +193,131 @@ export interface LeadRequest {
   quote?: Quote | null;
   /** Borrador propuesto por el servidor cuando aún no hay cotización guardada. */
   quoteDraft?: Quote | null;
-  /** Solo en la bandeja: totales de la cotización guardada. */
+  /** Totales de la cotización guardada. */
   quoteTotal?: (QuoteTotals & { currency: Currency }) | null;
+  quoteState?: QuoteState | null;
+  /** Vencimiento de una cotización emitida sin respuesta. */
+  quoteExpiry?: { estado: 'vigente' | 'por-vencer' | 'vencida'; vence: string; dias: number } | null;
+  /** Historial de cambios (trazabilidad). */
+  history?: { at: string; by: string; action: string; detail: string }[];
 }
-// Lo único que ve el cliente por el enlace público: sin datos personales, estado ni notas internas.
+// Cotización emitida tal como la ve el cliente en su enlace.
+export interface PublicQuote {
+  number: string;
+  state: QuoteState;
+  issuedAt: string;
+  expiresAt: string;
+  validityDays: number;
+  currency: Currency;
+  model: string;
+  color: string;
+  delivery: string;
+  paymentTerms: string;
+  items: Pick<QuoteItem, 'section' | 'description' | 'vehicles' | 'quantity' | 'unitPrice' | 'discount'>[];
+  totals: QuoteTotals;
+  approvedAt: string | null;
+  rejectedAt: string | null;
+  rejectionReason: string | null;
+}
+// Lo único que ve el cliente por el enlace público: sin datos personales ni notas internas.
 export interface PublicLeadView {
   code: string;
   createdAt: string;
   configuration: ConfigurationSnapshot;
+  quote: PublicQuote | null;
+}
+
+// Área Comercial: usuarios, avisos, clientes e indicadores
+export type Role = 'admin' | 'comercial';
+export interface CommercialUser {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  active: boolean;
+  createdAt: string;
+}
+export interface Notice {
+  key: string;
+  tipo: 'nueva' | 'aprobada' | 'rechazada' | 'por-vencer' | 'vencida';
+  nivel: 'info' | 'ok' | 'warn' | 'error';
+  titulo: string;
+  detalle: string;
+  fecha: string;
+  solicitudId: string;
+  descartado: boolean;
+}
+export interface Customer {
+  key: string;
+  tipo: 'corporate' | 'personal';
+  nombre: string;
+  documento: string;
+  contacto: string;
+  correo: string;
+  telefono: string;
+  ciudad: string;
+  solicitudes: number;
+  cotizaciones: number;
+  aprobadas: number;
+  rechazadas: number;
+  pendientes: number;
+  ultima: string;
+}
+export interface CustomerDetail extends Customer {
+  requests: {
+    id: string;
+    code: string;
+    status: LeadStatus;
+    createdAt: string;
+    vehicle: string;
+    accessories: number;
+    quote: {
+      number: string;
+      state: 'APROBADA' | 'RECHAZADA' | 'PENDIENTE';
+      issuedAt: string | null;
+      approvedAt: string | null;
+    } | null;
+  }[];
+}
+export interface IndicatorDef {
+  id: 'pca' | 'pcr' | 'pcp' | 'tpa';
+  nombre: string;
+  sigla: string;
+  dimension: string;
+  formula: string;
+  definiciones: string;
+  unidad: string;
+  meta: number;
+  mejora: 'subir' | 'bajar';
+}
+export interface IndicatorResult {
+  tc: number;
+  nca: number;
+  ncr: number;
+  ncp: number;
+  pca: number | null;
+  pcr: number | null;
+  pcp: number | null;
+  tpa: number | null;
+  nTpa: number;
+  sinFechaValida: number;
+}
+export interface IndicatorsResponse {
+  periodo: { desde: string; hasta: string };
+  indicadores: IndicatorDef[];
+  pre: IndicatorResult & { desde: string | null; hasta: string | null };
+  post: IndicatorResult;
+  evolucion: (IndicatorResult & { mes: string })[];
+  generadoEn: string;
+}
+export interface HistoryRow {
+  id: string;
+  numero: string;
+  cliente: string;
+  estado: 'APROBADA' | 'RECHAZADA' | 'PENDIENTE';
+  fechaEmision: string;
+  fechaAprobacion: string | null;
+  observacion: string;
+  importadoPor?: string;
+  importadoEn?: string;
 }

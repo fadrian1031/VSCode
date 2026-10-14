@@ -16,7 +16,14 @@ import {
 import { ThreeViewerComponent } from '../../components/three-viewer/three-viewer.component';
 import { COMMERCIAL_PATH } from '../../app.variant';
 import { FEATURES } from '../../features';
-import { CURRENCY_SYMBOL, SECTIONS, STATUS_LABEL, lineTotal, money } from '../../core/commercial';
+import {
+  CURRENCY_SYMBOL,
+  QUOTE_STATE_LABEL,
+  SECTIONS,
+  STATUS_LABEL,
+  lineTotal,
+  money
+} from '../../core/commercial';
 
 @Component({
   selector: 'app-commercial-detail',
@@ -32,10 +39,11 @@ export class CommercialDetailComponent implements OnInit {
   readonly features = FEATURES;
   readonly sections = SECTIONS;
   readonly label = STATUS_LABEL;
+  readonly quoteLabel = QUOTE_STATE_LABEL;
   readonly symbol = CURRENCY_SYMBOL;
   readonly money = money;
   readonly lineTotal = lineTotal;
-  // Estados que se eligen a mano; Cotizada y Aprobada salen de la cotización.
+  // Estados que se eligen a mano; Cotizada, Aprobada y Rechazada salen de la cotización.
   readonly manualStatuses: LeadStatus[] = ['NEW', 'CONTACTED', 'NEGOTIATING', 'LOST'];
 
   // Observaciones frecuentes que Comercial agrega con un clic (una por línea).
@@ -55,14 +63,23 @@ export class CommercialDetailComponent implements OnInit {
   viewMode = signal<'exterior' | 'interior'>('exterior');
   quote = signal<Quote | null>(null);
   photos = signal<QuotePhoto[]>([]);
-  busy = signal(''); // acción en curso: '', 'save', 'photos', 'pdf', 'xlsx', 'approve'
+  busy = signal(''); // acción en curso: '', 'save', 'photos', 'pdf', 'xlsx', 'emit', 'response'
   message = signal<{ type: 'ok' | 'error'; text: string } | null>(null);
   dirty = signal(false);
   rev = signal(0); // fuerza recalcular totales al editar líneas
   notes = '';
   status: LeadStatus = 'NEW';
+  // Formulario para registrar la respuesta que el cliente dio por correo o teléfono.
+  showResponse = signal(false);
+  readonly today = new Date().toISOString().slice(0, 10);
+  response = { decision: 'aprobar' as 'aprobar' | 'rechazar', date: '', channel: 'correo', reason: '' };
 
-  readonly approved = computed(() => this.lead()?.status === 'APPROVED');
+  readonly quoteState = computed(() => this.lead()?.quoteState || null);
+  /** Aprobada o rechazada: el cliente ya respondió y la cotización queda de solo lectura. */
+  readonly locked = computed(() => this.quoteState() === 'APROBADA' || this.quoteState() === 'RECHAZADA');
+  readonly systemStatus = computed(() =>
+    ['QUOTED', 'APPROVED', 'REJECTED'].includes(this.lead()?.status || '')
+  );
   readonly totals = computed(() => {
     this.rev();
     const q = this.quote();
@@ -99,7 +116,11 @@ export class CommercialDetailComponent implements OnInit {
       next: l => {
         this.setLead(l);
         this.loadPhotos();
-        if (this.route.snapshot.queryParamMap.get('tab') === 'quote' || l.status === 'APPROVED')
+        if (
+          this.route.snapshot.queryParamMap.get('tab') === 'quote' ||
+          l.quoteState === 'APROBADA' ||
+          l.quoteState === 'RECHAZADA'
+        )
           this.selectTab('quote');
       },
       error: e => {
@@ -172,7 +193,9 @@ export class CommercialDetailComponent implements OnInit {
       .updateLead(l.id, this.session.token(), { ...(status ? { status } : {}), commercialNotes: this.notes })
       .subscribe({
         next: r => {
-          this.lead.update(x => (x ? { ...x, status: r.status, commercialNotes: r.commercialNotes } : x));
+          this.lead.update(x =>
+            x ? { ...x, status: r.status, commercialNotes: r.commercialNotes, history: r.history } : x
+          );
           this.status = r.status;
           this.busy.set('');
           this.flash('ok', 'Cambios guardados.');
@@ -263,7 +286,7 @@ export class CommercialDetailComponent implements OnInit {
   async download(kind: 'pdf' | 'xlsx') {
     const l = this.lead();
     if (!l) return;
-    if (!this.approved() && (this.dirty() || !l.quote)) {
+    if (!this.locked() && (this.dirty() || !l.quote)) {
       if (!(await this.saveQuote(true))) return;
     }
     this.busy.set(kind);
@@ -280,37 +303,92 @@ export class CommercialDetailComponent implements OnInit {
     });
   }
 
-  async approve() {
+  /** Enlace que recibe el cliente: ve su configuración en 3D y, ya emitida, la cotización para aprobarla. */
+  clientLink(l: LeadRequest) {
+    return `${location.origin}/configurador#/solicitud/${l.publicToken}`;
+  }
+  copyLink(l: LeadRequest) {
+    navigator.clipboard?.writeText(this.clientLink(l)).then(
+      () => this.flash('ok', 'Enlace copiado. Envíelo al cliente por correo o WhatsApp.'),
+      () => this.flash('error', 'No se pudo copiar; seleccione el enlace y cópielo a mano.')
+    );
+  }
+  mailLink(l: LeadRequest) {
+    const q = l.quote;
+    const subject = `Cotización ${q?.number} · KASAC`;
+    const body = `Estimado(a) ${l.customer.fullName}:\n\nLe enviamos la cotización ${q?.number} de su configuración. Puede verla en 3D, descargar el PDF y aprobarla desde este enlace:\n${this.clientLink(l)}\n\nQuedamos atentos.\nÁrea Comercial KASAC`;
+    return `mailto:${l.customer.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  }
+
+  /** Emitir: guarda si hay cambios y envía la cotización al cliente; el servidor registra la fecha de emisión (FE). */
+  async emit() {
     const l = this.lead();
     if (!l) return;
     if (this.dirty() || !l.quote) {
       if (!(await this.saveQuote(true))) return;
     }
-    if (!confirm(`¿Aprobar la cotización ${this.lead()?.quote?.number}? Quedará bloqueada para edición.`))
-      return;
-    this.busy.set('approve');
-    this.api.approveQuote(l.id, this.session.token()).subscribe({
+    const first = this.quoteState() !== 'EMITIDA';
+    const msg = first
+      ? `¿Emitir la cotización ${this.lead()?.quote?.number}? Desde ahora el cliente podrá verla en su enlace y aprobarla o rechazarla.`
+      : `¿Reenviar la cotización ${this.lead()?.quote?.number} con los cambios? La fecha de emisión original se mantiene.`;
+    if (!confirm(msg)) return;
+    this.busy.set('emit');
+    this.api.emitQuote(l.id, this.session.token()).subscribe({
       next: r => {
         this.setLead(r);
         this.busy.set('');
-        this.flash('ok', 'Cotización aprobada.');
+        this.flash(
+          'ok',
+          first ? 'Cotización emitida. Copie el enlace y envíelo al cliente.' : 'Cotización reenviada.'
+        );
         this.quotePanel?.nativeElement.scrollTo({ top: 0 });
       },
-      error: e => this.fail(e, 'No se pudo aprobar.')
+      error: e => this.fail(e, 'No se pudo emitir la cotización.')
     });
   }
 
-  reopen() {
+  openResponse() {
+    this.response = {
+      decision: 'aprobar',
+      date: new Date().toISOString().slice(0, 10),
+      channel: 'correo',
+      reason: ''
+    };
+    this.showResponse.set(true);
+  }
+  /** Comercial registra la respuesta del cliente con la fecha en que llegó (por ejemplo, la del correo). */
+  submitResponse() {
     const l = this.lead();
     if (!l) return;
-    if (!confirm('¿Reabrir la cotización para editarla? Volverá al estado Cotizada.')) return;
-    this.busy.set('approve');
-    this.api.reopenQuote(l.id, this.session.token()).subscribe({
+    if (this.response.decision === 'rechazar' && !this.response.reason.trim()) {
+      this.flash('error', 'Indique el motivo del rechazo.');
+      return;
+    }
+    this.busy.set('response');
+    this.api.registerResponse(l.id, this.session.token(), this.response).subscribe({
+      next: r => {
+        this.setLead(r);
+        this.showResponse.set(false);
+        this.busy.set('');
+        this.flash('ok', r.quoteState === 'APROBADA' ? 'Aprobación registrada.' : 'Rechazo registrado.');
+      },
+      error: e => this.fail(e, 'No se pudo registrar la respuesta.')
+    });
+  }
+  /** Solo administrador: anula una respuesta registrada por error; queda en el historial. */
+  undoResponse() {
+    const l = this.lead();
+    if (!l) return;
+    const reason = prompt('¿Por qué se corrige la respuesta? (queda registrado en el historial)');
+    if (!reason?.trim()) return;
+    this.busy.set('response');
+    this.api.undoResponse(l.id, this.session.token(), reason.trim()).subscribe({
       next: r => {
         this.setLead(r);
         this.busy.set('');
+        this.flash('ok', 'Respuesta anulada: la cotización vuelve a pendiente por aprobar.');
       },
-      error: e => this.fail(e, 'No se pudo reabrir.')
+      error: e => this.fail(e, 'No se pudo corregir la respuesta.')
     });
   }
 }

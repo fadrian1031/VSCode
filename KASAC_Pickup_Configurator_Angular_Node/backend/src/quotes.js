@@ -2,6 +2,7 @@
 // validación de lo que envía Comercial y cálculo de totales.
 import crypto from 'node:crypto';
 import { precioDe } from './precios.js';
+import { tesis } from './tesis.js';
 
 // Secciones de la cotización (mismo orden en pantalla, PDF y Excel).
 export const SECTIONS = [
@@ -93,7 +94,7 @@ export function draftQuote(lead, catalog) {
     serviceType: 'EQUIPAMIENTO',
     motive: 'VENTA NACIONAL',
     paymentTerms: 'CONTADO',
-    validityDays: 10,
+    validityDays: tesis.diasVigencia,
     delivery: 'Entrega según confirmación de la orden de compra.',
     customerName: c.type === 'corporate' ? c.companyName : c.fullName,
     customerDocument: c.type === 'corporate' ? c.ruc : c.document || '',
@@ -157,7 +158,9 @@ export function sanitizeQuote(body, base) {
     currency: CURRENCIES[body?.currency] ? body.currency : base.currency,
     igvRate: body && 'igvRate' in body ? num(body.igvRate, 0, 0.5, 0.18) : base.igvRate,
     validityDays:
-      body && 'validityDays' in body ? Math.round(num(body.validityDays, 1, 365, 10)) : base.validityDays,
+      body && 'validityDays' in body
+        ? Math.round(num(body.validityDays, 1, 365, tesis.diasVigencia))
+        : base.validityDays,
     serviceType: field('serviceType', 60),
     motive: field('motive', 60),
     paymentTerms: field('paymentTerms', 80),
@@ -176,6 +179,33 @@ export function sanitizeQuote(body, base) {
     observations: field('observations', 2000),
     items
   };
+}
+
+// Ciclo de vida de una cotización (lo que miden los indicadores de la tesis):
+//   BORRADOR  → Comercial la está preparando (ya cuenta en TC, como pendiente).
+//   EMITIDA   → se envió al cliente; se guarda la fecha de emisión (FE). Sigue pendiente por aprobar.
+//   APROBADA  → el cliente la aceptó; se guarda la fecha de aprobación (FA).
+//   RECHAZADA → el cliente no la aceptó; se guarda la fecha y el motivo.
+export const QUOTE_STATES = ['BORRADOR', 'EMITIDA', 'APROBADA', 'RECHAZADA'];
+
+/** Estado de la cotización. Las guardadas antes de este cambio no tienen "state" y se deducen de sus fechas. */
+export function quoteState(quote) {
+  if (!quote) return null;
+  if (QUOTE_STATES.includes(quote.state)) return quote.state;
+  if (quote.approvedAt) return 'APROBADA';
+  return quote.issuedAt ? 'EMITIDA' : 'BORRADOR';
+}
+
+/** Fecha en que vence una cotización emitida (FE + días de vigencia). */
+export function expiresAt(quote) {
+  if (!quote?.issuedAt) return null;
+  const days = quote.validityDays || tesis.diasVigencia;
+  return new Date(Date.parse(quote.issuedAt) + days * 864e5).toISOString();
+}
+
+/** Días entre dos fechas ISO, con dos decimales (base del TPA). */
+export function daysBetween(from, to) {
+  return Math.round(((Date.parse(to) - Date.parse(from)) / 864e5) * 100) / 100;
 }
 
 export function nextQuoteNumber(rows) {

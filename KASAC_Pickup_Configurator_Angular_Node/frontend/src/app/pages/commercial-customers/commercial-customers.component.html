@@ -1,0 +1,114 @@
+<div class="page">
+  <app-commercial-nav />
+  <main [class.with-detail]="!!selected()">
+    <section class="list">
+      <div class="head">
+        <div>
+          <div class="eyebrow">Módulo de clientes</div>
+          <h1>Clientes</h1>
+          <p>
+            Empresas y personas que enviaron su configuración desde la web, con el resultado de sus
+            cotizaciones.
+          </p>
+        </div>
+        <input
+          class="search"
+          type="search"
+          placeholder="Buscar por nombre, RUC, DNI o correo"
+          [value]="query()"
+          (input)="query.set($any($event.target).value)"
+        />
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            <th>Contacto</th>
+            <th>Solicitudes</th>
+            <th>Aprobadas</th>
+            <th>Rechazadas</th>
+            <th>Pendientes</th>
+            <th>Última</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (c of filtered(); track c.key) {
+            <tr
+              (click)="open(c)"
+              [class.active]="selected()?.key === c.key"
+              tabindex="0"
+              (keydown.enter)="open(c)"
+            >
+              <td>
+                <b>{{ c.nombre }}</b>
+                <small>{{ c.tipo === 'corporate' ? 'RUC' : 'DNI' }} {{ c.documento || '—' }}</small>
+              </td>
+              <td>
+                {{ c.contacto }}
+                <small>{{ c.correo }} · {{ c.telefono }}</small>
+              </td>
+              <td class="num">{{ c.solicitudes }}</td>
+              <td class="num ok">{{ c.aprobadas }}</td>
+              <td class="num bad">{{ c.rechazadas }}</td>
+              <td class="num">{{ c.pendientes }}</td>
+              <td>{{ c.ultima | date: 'dd/MM/yyyy' }}</td>
+            </tr>
+          } @empty {
+            <tr>
+              <td colspan="7" class="empty">
+                {{ loaded() ? 'No hay clientes con este filtro.' : 'Cargando clientes…' }}
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </section>
+
+    @if (selected(); as s) {
+      <aside class="detail">
+        <button class="close" type="button" (click)="selected.set(null)" aria-label="Cerrar">×</button>
+        <div class="eyebrow">{{ s.tipo === 'corporate' ? 'Empresa' : 'Persona natural' }}</div>
+        <h2>{{ s.nombre }}</h2>
+        <dl>
+          <dt>{{ s.tipo === 'corporate' ? 'RUC' : 'DNI' }}</dt>
+          <dd>{{ s.documento || '—' }}</dd>
+          <dt>Contacto</dt>
+          <dd>{{ s.contacto }}</dd>
+          <dt>Correo</dt>
+          <dd>{{ s.correo }}</dd>
+          <dt>Teléfono</dt>
+          <dd>{{ s.telefono }}</dd>
+          <dt>Ciudad</dt>
+          <dd>{{ s.ciudad || '—' }}</dd>
+        </dl>
+        <h3>Historial de solicitudes</h3>
+        <ol class="requests">
+          @for (r of s.requests; track r.id) {
+            <li>
+              <a [routerLink]="requestLink(r.id)">
+                <b>{{ r.code }}</b>
+                <span class="status" [attr.data-status]="r.status">{{ label[r.status] }}</span>
+              </a>
+              <small>
+                {{ r.createdAt | date: 'dd/MM/yyyy' }} · {{ r.vehicle }} · {{ r.accessories }} accesorios
+              </small>
+              @if (r.quote) {
+                <small>
+                  {{ r.quote.number }} · {{ quoteLabel[r.quote.state] }}
+                  @if (r.quote.issuedAt) {
+                    · emitida {{ r.quote.issuedAt | date: 'dd/MM/yyyy' }}
+                  }
+                  @if (r.quote.approvedAt && r.quote.state === 'APROBADA') {
+                    · aprobada {{ r.quote.approvedAt | date: 'dd/MM/yyyy' }}
+                  }
+                </small>
+              } @else {
+                <small>Sin cotizar</small>
+              }
+            </li>
+          }
+        </ol>
+      </aside>
+    }
+  </main>
+</div>

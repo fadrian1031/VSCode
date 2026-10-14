@@ -2,6 +2,8 @@
 // - PostgreSQL si existe DATABASE_URL (recomendado en Render gratuito: el disco del servicio se borra
 //   cada vez que se duerme o se vuelve a desplegar).
 // - Archivo JSON en DATA_FILE (o backend/data) en cualquier otro caso.
+// Además de las solicitudes hay colecciones con nombre (usuarios, histórico, avisos descartados):
+// storage.collection('usuarios') devuelve un almacén con la misma interfaz { all, update }.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createStore } from './store.js';
@@ -39,11 +41,16 @@ export async function createStorage({ databaseUrl, dataFile, fallbackDir }) {
   const dir = path.dirname(file);
   // En Render, sin disco montado, el archivo desaparece al reiniciar el servicio.
   const persistent = !process.env.RENDER || (await isMountPoint(dir));
+  const collections = new Map();
   return {
     kind: 'archivo',
     file,
     persistent,
     store: createStore(file),
+    collection(name) {
+      if (!collections.has(name)) collections.set(name, createStore(path.join(dir, `${name}.json`)));
+      return collections.get(name);
+    },
     photos: createPhotoStore(dir),
     close: async () => {}
   };

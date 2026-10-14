@@ -5,7 +5,7 @@
     </a>
     <div *ngIf="lead() as l">
       <b>{{ l.code }}</b>
-      <small>Vista compartida · solo lectura</small>
+      <small>{{ l.quote ? 'Cotización ' + l.quote.number : 'Vista compartida · solo lectura' }}</small>
     </div>
   </header>
   <main *ngIf="lead() as l; else state">
@@ -30,6 +30,92 @@
       />
     </section>
     <aside>
+      @if (l.quote; as q) {
+        <section class="quote" [attr.data-state]="q.state">
+          <div class="eyebrow">Su cotización</div>
+          <h2>{{ q.number }}</h2>
+          <p class="quote-meta">
+            Emitida el {{ q.issuedAt | date: 'dd/MM/yyyy' }} · válida hasta el
+            {{ q.expiresAt | date: 'dd/MM/yyyy' }}
+          </p>
+          <table>
+            @for (s of sections; track s.id) {
+              @if (itemsOf(s.id).length) {
+                <tr class="sec">
+                  <td colspan="2">{{ s.name }}</td>
+                </tr>
+                @for (i of itemsOf(s.id); track $index) {
+                  <tr>
+                    <td>
+                      {{ i.description }}
+                      <small>× {{ i.vehicles * i.quantity }}</small>
+                    </td>
+                    <td class="num">{{ money(lineTotal($any(i))) }}</td>
+                  </tr>
+                }
+              }
+            }
+            <tr class="tot">
+              <td>Subtotal</td>
+              <td class="num">{{ symbol[q.currency] }} {{ money(q.totals.subtotal) }}</td>
+            </tr>
+            <tr class="tot">
+              <td>IGV</td>
+              <td class="num">{{ symbol[q.currency] }} {{ money(q.totals.igv) }}</td>
+            </tr>
+            <tr class="tot grand">
+              <td>Total</td>
+              <td class="num">{{ symbol[q.currency] }} {{ money(q.totals.total) }}</td>
+            </tr>
+          </table>
+          <a class="pdf" [href]="pdfUrl()" target="_blank" rel="noopener">Ver cotización en PDF</a>
+
+          @if (q.state === 'EMITIDA') {
+            <div class="answer">
+              @if (!rejecting()) {
+                <button class="btn primary" (click)="answer('aprobar')" [disabled]="busy()">
+                  Aprobar cotización
+                </button>
+                <button class="btn secondary" (click)="rejecting.set(true)" [disabled]="busy()">
+                  No la apruebo
+                </button>
+              } @else {
+                <label for="p-reason">¿Por qué no aprueba la cotización?</label>
+                <textarea
+                  id="p-reason"
+                  rows="3"
+                  [(ngModel)]="reason"
+                  placeholder="Precio, plazo, cambios en el equipamiento…"
+                ></textarea>
+                <div class="answer-row">
+                  <button class="btn secondary" (click)="rejecting.set(false)" [disabled]="busy()">
+                    Volver
+                  </button>
+                  <button class="btn danger" (click)="answer('rechazar')" [disabled]="busy()">
+                    Enviar respuesta
+                  </button>
+                </div>
+              }
+              @if (answerError()) {
+                <p class="answer-error">{{ answerError() }}</p>
+              }
+            </div>
+          } @else if (q.state === 'APROBADA') {
+            <div class="result ok">
+              <b>Cotización aprobada</b>
+              <span>
+                El {{ q.approvedAt | date: 'dd/MM/yyyy HH:mm' }}. Nuestro equipo comercial se comunicará con
+                usted para coordinar.
+              </span>
+            </div>
+          } @else if (q.state === 'RECHAZADA') {
+            <div class="result bad">
+              <b>Cotización no aprobada</b>
+              <span>Gracias por responder. Si desea una nueva propuesta, escríbanos.</span>
+            </div>
+          }
+        </section>
+      }
       <div class="eyebrow">Configuración recibida</div>
       <h1>{{ l.configuration.vehicle.brand }} {{ l.configuration.vehicle.model }}</h1>
       <p class="intro">
@@ -71,10 +157,12 @@
         <h3>Indicaciones</h3>
         <p>{{ l.configuration.notes }}</p>
       </section>
-      <div class="notice">
-        El precio final y la validación técnica son definidos por el área comercial y las áreas técnicas de
-        KASAC.
-      </div>
+      @if (!l.quote) {
+        <div class="notice">
+          El precio final y la validación técnica son definidos por el área comercial y las áreas técnicas de
+          KASAC. Cuando su cotización esté lista, la verá aquí mismo para aprobarla.
+        </div>
+      }
     </aside>
   </main>
   <ng-template #state>

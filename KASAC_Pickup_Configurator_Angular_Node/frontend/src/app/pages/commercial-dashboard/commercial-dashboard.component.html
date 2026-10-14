@@ -1,16 +1,10 @@
 <div class="commercial">
-  <header>
-    <span class="kasac-logo"><img src="assets/img/logo-kasac.png" alt="KASAC" width="83" height="40" /></span>
-    <div>
-      <b>Área comercial</b>
-      <button type="button" (click)="logout()">Salir</button>
-    </div>
-  </header>
+  <app-commercial-nav />
   <main>
     <div class="head">
       <div>
         <div class="eyebrow">Bandeja comercial</div>
-        <h1>Solicitudes de clientes</h1>
+        <h1>Solicitudes de cotizaciones de clientes</h1>
         <p>Configuraciones enviadas desde el configurador 3D de la web.</p>
       </div>
       <div class="metrics">
@@ -19,12 +13,16 @@
           <span>Nuevas</span>
         </div>
         <div class="metric">
-          <strong>{{ counts()['QUOTED'] || 0 }}</strong>
-          <span>Cotizadas</span>
+          <strong>{{ quoteCounts().EMITIDA }}</strong>
+          <span>Pendientes por aprobar</span>
         </div>
         <div class="metric">
-          <strong>{{ counts()['APPROVED'] || 0 }}</strong>
+          <strong>{{ quoteCounts().APROBADA }}</strong>
           <span>Aprobadas</span>
+        </div>
+        <div class="metric">
+          <strong>{{ quoteCounts().RECHAZADA }}</strong>
+          <span>Rechazadas</span>
         </div>
       </div>
     </div>
@@ -71,11 +69,12 @@
         <span>Cliente</span>
         <span>Vehículo</span>
         <span>Cotización</span>
+        <span>Tiempo de aprobación</span>
         <span>Fecha</span>
         <span></span>
       </div>
       @for (l of filtered(); track l.id) {
-        <a class="request" [routerLink]="link(l)">
+        <a class="request" [routerLink]="link(l)" [attr.data-expiry]="l.quoteExpiry?.estado">
           <div class="code">
             <b>{{ l.code }}</b>
             <span [attr.data-status]="l.status">{{ label[l.status] }}</span>
@@ -95,10 +94,23 @@
           <div>
             @if (l.quote && l.quoteTotal) {
               <b>{{ l.quote.number }}</b>
-              <small>{{ symbol[l.quoteTotal.currency] }} {{ money(l.quoteTotal.total) }}</small>
+              <small>
+                {{ quoteLabel[l.quoteState || 'BORRADOR'] }} · {{ symbol[l.quoteTotal.currency] }}
+                {{ money(l.quoteTotal.total) }}
+              </small>
+              @if (l.quoteExpiry?.estado === 'por-vencer') {
+                <span class="expiry warn">Vence en {{ l.quoteExpiry!.dias }} d</span>
+              } @else if (l.quoteExpiry?.estado === 'vencida') {
+                <span class="expiry late">Vencida hace {{ l.quoteExpiry!.dias }} d</span>
+              }
             } @else {
               <small>Sin cotizar</small>
             }
+          </div>
+          @let t = approvalTime(l);
+          <div class="elapsed" [attr.data-state]="t.state">
+            <b>{{ t.label }}</b>
+            <small>{{ t.detail }}</small>
           </div>
           <time>{{ l.createdAt | date: 'dd/MM/yyyy HH:mm' }}</time>
           <span class="arrow">→</span>

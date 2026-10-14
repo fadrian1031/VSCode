@@ -88,8 +88,8 @@ export function buildQuotePdf(lead, photos = []) {
     .fillColor(BLUE)
     .text(q.number, bx, M + 25, { width: 200, align: 'right' });
   const meta = [
-    ['Emisión', date(q.updatedAt)],
-    ['Válida hasta', date(addDays(q.updatedAt, q.validityDays))],
+    ['Emisión', date(q.issuedAt || q.updatedAt)],
+    ['Válida hasta', date(addDays(q.issuedAt || q.updatedAt, q.validityDays))],
     ['Solicitud web', lead.code]
   ];
   let my = M + 44;

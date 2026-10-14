@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { commercialAuth, commercialGuest } from './core/commercial-auth.guard';
+import { commercialRoutes } from './core/commercial-routes';
 
 // Variante de la aplicación, elegida en tiempo de build (angular.json → fileReplacements):
 //   app.variant.ts            interna para desarrollo (ng serve): configurador + Área Comercial en /comercial
@@ -13,25 +13,4 @@ export const EMBEDDED = false;
 export const COMMERCIAL_APP = false;
 // Prefijo de las rutas comerciales dentro de esta app.
 export const COMMERCIAL_PATH = '/comercial';
-export const COMMERCIAL_ROUTES: Routes = [
-  {
-    path: 'comercial/login',
-    canActivate: [commercialGuest('/comercial')],
-    loadComponent: () =>
-      import('./pages/commercial-login/commercial-login.component').then(m => m.CommercialLoginComponent)
-  },
-  {
-    path: 'comercial',
-    canActivate: [commercialAuth('/comercial/login')],
-    loadComponent: () =>
-      import('./pages/commercial-dashboard/commercial-dashboard.component').then(
-        m => m.CommercialDashboardComponent
-      )
-  },
-  {
-    path: 'comercial/solicitud/:id',
-    canActivate: [commercialAuth('/comercial/login')],
-    loadComponent: () =>
-      import('./pages/commercial-detail/commercial-detail.component').then(m => m.CommercialDetailComponent)
-  }
-];
+export const COMMERCIAL_ROUTES: Routes = commercialRoutes('comercial');

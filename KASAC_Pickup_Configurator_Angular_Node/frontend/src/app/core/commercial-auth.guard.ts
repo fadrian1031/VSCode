@@ -17,8 +17,11 @@ export const commercialAuth =
       return router.parseUrl(loginUrl);
     };
     if (!session.isLogged()) return toLogin();
-    return api.system(session.token()).pipe(
-      map(() => true),
+    return api.me(session.token()).pipe(
+      map(user => {
+        session.setUser(user);
+        return true;
+      }),
       catchError(() => of(toLogin()))
     );
   };
@@ -28,3 +31,9 @@ export const commercialGuest =
   (homeUrl: string): CanActivateFn =>
   () =>
     inject(SessionService).isLogged() ? inject(Router).parseUrl(homeUrl) : true;
+
+// Pantallas solo para administradores (usuarios): un comercial vuelve a la bandeja.
+export const adminOnly =
+  (homeUrl: string): CanActivateFn =>
+  () =>
+    inject(SessionService).isAdmin() ? true : inject(Router).parseUrl(homeUrl);

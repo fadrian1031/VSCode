@@ -71,7 +71,7 @@ export async function buildQuoteXlsx(lead, photos = []) {
   merge('E1:H1', 'COTIZACIÓN', { size: 18, bold: true }, right);
   merge('E2:H2', q.number, { size: 12, bold: true, color: { argb: BLUE } }, right);
   merge('E3:G3', 'Emisión', { color: { argb: MUTED } }, right);
-  set('H3', date(q.updatedAt), { bold: true }, { numFmt: 'dd/mm/yyyy', ...right });
+  set('H3', date(q.issuedAt || q.updatedAt), { bold: true }, { numFmt: 'dd/mm/yyyy', ...right });
   merge('E4:G4', 'Válida hasta', { color: { argb: MUTED } }, right);
   set('H4', { formula: `H3+${q.validityDays}` }, { bold: true }, { numFmt: 'dd/mm/yyyy', ...right });
   merge('E5:G5', 'Solicitud web', { color: { argb: MUTED } }, right);

@@ -127,7 +127,8 @@ test('el enlace público no expone datos del cliente', async () => {
   const r = await post('/api/leads', { customer, configuration: { vehicle: { id: 'l200-2024' } } });
   const { publicUrl } = await r.json();
   const view = await (await fetch(`${base}/api/public/requests/${publicUrl.split('/').pop()}`)).json();
-  assert.deepEqual(Object.keys(view).sort(), ['code', 'configuration', 'createdAt']);
+  assert.deepEqual(Object.keys(view).sort(), ['code', 'configuration', 'createdAt', 'quote']);
+  assert.equal(view.quote, null); // sin cotización emitida no hay nada que mostrar
 });
 
 test('login: sesión válida y bloqueo tras 5 fallos', async () => {
@@ -193,7 +194,7 @@ const call = (token, method, url, body) =>
     body: body ? JSON.stringify(body) : undefined
   });
 
-test('flujo de cotización: borrador, guardar, aprobar, bloquear y reabrir', async () => {
+test('flujo de cotización: borrador, emisión (FE), respuesta del cliente (FA) y corrección', async () => {
   // Servidor aparte: el test de login dejó bloqueada esta IP en el servidor principal.
   const port = 3800 + Math.floor(Math.random() * 90);
   const { child } = await start({
@@ -231,7 +232,8 @@ test('flujo de cotización: borrador, guardar, aprobar, bloquear y reabrir', asy
       items: detail.quoteDraft.items.map(i => ({ ...i, unitPrice: 100, vehicles: 2 }))
     };
     const saved = await (await call(token, 'PUT', `/api/commercial/requests/${lead.id}/quote`, q)).json();
-    assert.equal(saved.status, 'QUOTED');
+    assert.equal(saved.quoteState, 'BORRADOR');
+    assert.equal(saved.status, 'NEW'); // guardar no cambia el estado: la solicitud pasa a Cotizada al emitir
     assert.match(saved.quote.number, /^COT-\d{4}-00001$/);
     const list = await (await call(token, 'GET', '/api/commercial/requests')).json();
     assert.equal(list[0].quoteTotal.subtotal, 600); // (2 circulinas + 1 estribo) × 2 vehículos × 100
@@ -241,7 +243,7 @@ test('flujo de cotización: borrador, guardar, aprobar, bloquear y reabrir', asy
     await call(token, 'PATCH', `/api/commercial/requests/${lead.id}`, { status: 'APPROVED' });
     assert.equal(
       (await (await call(token, 'GET', `/api/commercial/requests/${lead.id}`)).json()).status,
-      'QUOTED'
+      'NEW'
     );
 
     // Fotos, PDF y Excel.
@@ -273,22 +275,63 @@ test('flujo de cotización: borrador, guardar, aprobar, bloquear y reabrir', asy
     );
     assert.equal((await fetch(`${base}/api/commercial/requests/${lead.id}/quote.pdf`)).status, 401);
 
-    // Aprobar bloquea la edición; reabrir la permite.
+    // Mientras es borrador, el cliente no ve precios ni la cotización.
+    const pub = `${base}/api/public/requests/${publicUrl.split('/').pop()}`;
+    const postAbs = (url, body) =>
+      fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+    let view = await (await fetch(pub)).json();
+    assert.equal(view.quote, null);
+    assert.ok(!JSON.stringify(view).includes('unitPrice'));
+    assert.ok(!/precio|unitPrice/i.test(await (await fetch(`${base}/api/catalog`)).text()));
+    // El cliente no puede responder una cotización que no se le ha enviado.
     assert.equal(
-      (await (await call(token, 'POST', `/api/commercial/requests/${lead.id}/quote/approve`)).json()).status,
-      'APPROVED'
-    );
-    assert.equal((await call(token, 'PUT', `/api/commercial/requests/${lead.id}/quote`, q)).status, 409);
-    assert.equal(
-      (await (await call(token, 'POST', `/api/commercial/requests/${lead.id}/quote/reopen`)).json()).status,
-      'QUOTED'
+      (
+        await fetch(pub + '/respuesta', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: '{"decision":"aprobar"}'
+        })
+      ).status,
+      409
     );
 
-    // El cliente nunca ve precios ni la cotización.
-    const view = await (await fetch(`${base}/api/public/requests/${publicUrl.split('/').pop()}`)).json();
-    assert.ok(!JSON.stringify(view).includes('unitPrice') && !('quote' in view));
-    const catalogText = await (await fetch(`${base}/api/catalog`)).text();
-    assert.ok(!/precio|unitPrice/i.test(catalogText));
+    // Emitir: queda la fecha de emisión (FE) y la solicitud pasa a Cotizada.
+    const emitted = await (
+      await call(token, 'POST', `/api/commercial/requests/${lead.id}/quote/emit`)
+    ).json();
+    assert.equal(emitted.quoteState, 'EMITIDA');
+    assert.equal(emitted.status, 'QUOTED');
+    assert.ok(emitted.quote.issuedAt);
+    view = await (await fetch(pub)).json();
+    assert.equal(view.quote.state, 'EMITIDA');
+    assert.equal(view.quote.totals.total, 708);
+    assert.equal((await fetch(`${pub}/quote.pdf`)).headers.get('content-type'), 'application/pdf');
+
+    // Rechazar exige motivo; aprobar registra la fecha de aprobación (FA).
+    assert.equal((await postAbs(`${pub}/respuesta`, { decision: 'rechazar' })).status, 400);
+    view = await (await postAbs(`${pub}/respuesta`, { decision: 'aprobar' })).json();
+    assert.equal(view.quote.state, 'APROBADA');
+    assert.ok(view.quote.approvedAt >= emitted.quote.issuedAt);
+    assert.equal((await postAbs(`${pub}/respuesta`, { decision: 'rechazar', reason: 'x' })).status, 409);
+    // Una cotización respondida ya no se edita.
+    assert.equal((await call(token, 'PUT', `/api/commercial/requests/${lead.id}/quote`, q)).status, 409);
+
+    // El administrador puede anular una respuesta registrada por error, indicando el motivo.
+    assert.equal(
+      (await call(token, 'POST', `/api/commercial/requests/${lead.id}/quote/undo-response`, {})).status,
+      400
+    );
+    const undone = await (
+      await call(token, 'POST', `/api/commercial/requests/${lead.id}/quote/undo-response`, {
+        reason: 'Prueba'
+      })
+    ).json();
+    assert.equal(undone.quoteState, 'EMITIDA');
+    assert.ok(undone.history.some(h => h.action.startsWith('Respuesta de')));
   } finally {
     child.kill();
     base = prevBase;
@@ -390,6 +433,112 @@ test('limpieza: solicitudes sin cotizar de más de 30 días se eliminan; cotizad
   } finally {
     child.kill();
   }
+});
+
+test('indicadores: PCA, PCR y PCP suman 100 % y el TPA solo usa fechas válidas', async () => {
+  const { calculate } = await import('../src/indicadores.js');
+  const r = (estado, fe, fa) => ({ estado, fechaEmision: fe, fechaAprobacion: fa, fechaRegistro: fe });
+  const res = calculate([
+    r('APROBADA', '2026-01-01T00:00:00Z', '2026-01-11T00:00:00Z'), // 10 días
+    r('APROBADA', '2026-01-01T00:00:00Z', '2026-01-21T00:00:00Z'), // 20 días
+    r('APROBADA', '2026-01-01T00:00:00Z', null), // sin FA: cuenta como aprobada, no entra al TPA
+    r('RECHAZADA', '2026-01-02T00:00:00Z', null),
+    r('PENDIENTE', null, null)
+  ]);
+  assert.equal(res.tc, 5);
+  assert.equal(res.pca, 60);
+  assert.equal(res.pcr, 20);
+  assert.equal(res.pcp, 20);
+  assert.equal(res.pca + res.pcr + res.pcp, 100);
+  assert.equal(res.tpa, 15);
+  assert.equal(res.nTpa, 2);
+  assert.equal(calculate([]).pca, null);
+});
+
+test('histórico: importa el Excel, reconoce estados y fechas y reporta filas con error', async () => {
+  const ExcelJS = (await import('exceljs')).default;
+  const { parseHistory } = await import('../src/historico.js');
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('H');
+  ws.addRow(['Registro de cotizaciones 2026']);
+  ws.addRow(['N° Cotización', 'Cliente', 'Fecha de Emisión', 'Estado', 'Fecha de Aprobación']);
+  ws.addRow(['C-1', 'A', new Date('2026-01-05'), 'Aprobado', '03/02/2026']);
+  ws.addRow(['C-2', 'B', '2026-01-10', 'RECHAZADA', '']);
+  ws.addRow(['C-3', 'C', '12/01/2026', 'en espera', '']);
+  ws.addRow(['C-1', 'D', '12/01/2026', 'Pendiente', '']); // número repetido
+  ws.addRow(['C-5', 'E', 'sin fecha', 'Aprobada', '']);
+  const { rows, errors } = await parseHistory(Buffer.from(await wb.xlsx.writeBuffer()));
+  assert.deepEqual(
+    rows.map(r => r.estado),
+    ['APROBADA', 'RECHAZADA', 'PENDIENTE']
+  );
+  assert.equal(rows[0].fechaAprobacion.slice(0, 10), '2026-02-03');
+  assert.deepEqual(
+    errors.map(e => e.fila),
+    [6, 7]
+  );
+});
+
+test('usuarios: el comercial no administra usuarios y siempre queda un administrador', async () => {
+  const port = 3700 + Math.floor(Math.random() * 90);
+  const { child } = await start({
+    PORT: String(port),
+    NODE_ENV: 'development',
+    DATA_FILE: path.join(dir, 'u.json')
+  });
+  const prevBase = base;
+  base = `http://localhost:${port}`;
+  try {
+    const admin = await login();
+    const created = await call(admin, 'POST', '/api/commercial/usuarios', {
+      name: 'Vendedor',
+      email: 'vendedor@kasac.pe',
+      password: 'clave-segura',
+      role: 'comercial'
+    });
+    assert.equal(created.status, 201);
+    assert.ok(!('password' in (await created.json())));
+    const seller = (
+      await (await post('/api/auth/login', { email: 'vendedor@kasac.pe', password: 'clave-segura' })).json()
+    ).token;
+    assert.equal((await call(seller, 'GET', '/api/commercial/usuarios')).status, 403);
+    assert.equal((await call(seller, 'GET', '/api/commercial/indicadores')).status, 200);
+    const users = await (await call(admin, 'GET', '/api/commercial/usuarios')).json();
+    const me = users.find(u => u.role === 'admin');
+    assert.equal(
+      (await call(admin, 'PATCH', `/api/commercial/usuarios/${me.id}`, { role: 'comercial' })).status,
+      400
+    );
+    // Un usuario desactivado ya no puede usar su sesión.
+    const v = users.find(u => u.email === 'vendedor@kasac.pe');
+    await call(admin, 'PATCH', `/api/commercial/usuarios/${v.id}`, { active: false });
+    assert.equal((await call(seller, 'GET', '/api/commercial/requests')).status, 401);
+  } finally {
+    child.kill();
+    base = prevBase;
+  }
+});
+
+test('avisos: una cotización emitida sin respuesta avisa antes y después de vencer', async () => {
+  const { computeNotices } = await import('../src/avisos.js');
+  const day = 864e5,
+    now = Date.parse('2026-06-30T12:00:00Z');
+  const lead = (id, issuedDaysAgo) => ({
+    id,
+    code: id,
+    status: 'QUOTED',
+    createdAt: '2026-05-01T00:00:00Z',
+    customer: { type: 'personal', fullName: 'Cliente' },
+    configuration: { vehicle: { brand: 'Toyota', model: 'Hilux' } },
+    quote: {
+      number: `COT-${id}`,
+      state: 'EMITIDA',
+      validityDays: 30,
+      issuedAt: new Date(now - issuedDaysAgo * day).toISOString()
+    }
+  });
+  const tipos = computeNotices([lead('a', 10), lead('b', 27), lead('c', 40)], now).map(n => n.tipo);
+  assert.deepEqual(tipos.sort(), ['por-vencer', 'vencida']);
 });
 
 test(
